@@ -51,18 +51,19 @@ class ObstacleMapV2(ObstacleMap):
         # keys_to_del = set(self._f_position_to_f_info.keys())
 
         for f_px in self._frontiers_px:
-            if tuple(f_px) not in self._f_position_to_f_info:
+            f_px_tuple: Tuple[int, int] = tuple(f_px)  # noqa
+            if f_px_tuple not in self._f_position_to_f_info:
                 f_info = FrontierInfo(
                     camera_position_px=agent_pixel_location,
-                    frontier_position_px=tuple(f_px),
+                    frontier_position_px=f_px_tuple,
                     single_fog_of_war=self._new_explored_area,
                     agent_pose=[0, 0, 0, yaw],  # only yaw; we have camera_position_px
                     frontier_position=None,
                     rgb_img=rgb,
                 )
-                self._f_position_to_f_info[f_px] = f_info
+                self._f_position_to_f_info[f_px_tuple] = f_info
             else:
-                f_info = self._f_position_to_f_info[f_px]
+                f_info = self._f_position_to_f_info[f_px_tuple]
                 # keys_to_del.remove(f_px)
 
             frontier_infos.append(f_info)
@@ -70,9 +71,14 @@ class ObstacleMapV2(ObstacleMap):
         # for k in keys_to_del:
         #     del self._f_position_to_f_info[k]
 
+        explored_uint8 = np.array(self.explored_area, dtype=np.uint8)
         boundary_contour = cv2.findContours(
-            self.explored_area, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
+            explored_uint8, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
         )[0]
+        if len(boundary_contour) == 0:
+            return  # No boundary contour found
+        else:
+            boundary_contour = boundary_contour[0]
         inds_to_keep = filter_frontiers(frontier_infos, boundary_contour)
 
-        self.frontier_infos = [(i, self.frontier_infos[i]) for i in inds_to_keep]
+        self.frontier_infos = [(i, frontier_infos[i]) for i in inds_to_keep]

@@ -11,7 +11,7 @@ from hydra.core.config_store import ConfigStore
 from torch import Tensor
 
 from vlfm.mapping.object_point_cloud_map import ObjectPointCloudMap
-from vlfm.mapping.obstacle_map import ObstacleMap
+from vlfm.mapping.obstacle_map_v2 import ObstacleMapV2 as ObstacleMap
 from vlfm.obs_transformers.utils import image_resize
 from vlfm.policy.utils.pointnav_policy import WrappedPointNavResNetPolicy
 from vlfm.utils.geometry_utils import get_fov, rho_theta

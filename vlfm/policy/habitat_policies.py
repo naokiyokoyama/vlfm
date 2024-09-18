@@ -191,6 +191,7 @@ class HabitatMixin:
         self._obstacle_map: ObstacleMap
         if self._compute_frontiers:
             self._obstacle_map.update_map(
+                rgb,
                 depth,
                 tf_camera_to_episodic,
                 self._min_depth,

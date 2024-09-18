@@ -159,6 +159,7 @@ class VLFMTrainer(PPOTrainer):
         from vlfm.utils.habitat_visualizer import HabitatVis
 
         num_successes = 0
+        spl_sum = 0
         num_total = 0
         hab_vis = HabitatVis()
         while len(stats_episodes) < (number_of_eval_episodes * evals_per_ep) and self.envs.num_envs > 0:
@@ -264,7 +265,9 @@ class VLFMTrainer(PPOTrainer):
 
                     if episode_stats["success"] == 1:
                         num_successes += 1
+                    spl_sum += float(episode_stats["spl"])
                     num_total += 1
+                    print(f"SPL: {float(episode_stats['spl']) * 100:.2f}%\tMean SPL: {spl_sum / num_total * 100:.2f}%")
                     print(f"Success rate: {num_successes / num_total * 100:.2f}% ({num_successes} out of {num_total})")
 
                     from vlfm.utils.episode_stats_logger import (
