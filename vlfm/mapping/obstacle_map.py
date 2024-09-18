@@ -34,6 +34,7 @@ class ObstacleMap(BaseMap):
     ):
         super().__init__(size, pixels_per_meter)
         self.explored_area = np.zeros((size, size), dtype=bool)
+        self._new_explored_area = np.zeros((size, size), dtype=bool)
         self._map = np.zeros((size, size), dtype=bool)
         self._navigable_map = np.zeros((size, size), dtype=bool)
         self._min_height = min_height
@@ -47,8 +48,9 @@ class ObstacleMap(BaseMap):
 
     def reset(self) -> None:
         super().reset()
-        self._navigable_map.fill(0)
         self.explored_area.fill(0)
+        self._navigable_map.fill(0)
+        self._new_explored_area.fill(0)
         self._frontiers_px = np.array([])
         self.frontiers = np.array([])
 
@@ -114,7 +116,7 @@ class ObstacleMap(BaseMap):
         # Update the explored area
         agent_xy_location = tf_camera_to_episodic[:2, 3]
         agent_pixel_location = self._xy_to_px(agent_xy_location.reshape(1, 2))[0]
-        new_explored_area = reveal_fog_of_war(
+        self._new_explored_area = reveal_fog_of_war(
             top_down_map=self._navigable_map.astype(np.uint8),
             current_fog_of_war_mask=np.zeros_like(self._map, dtype=np.uint8),
             current_point=agent_pixel_location[::-1],
@@ -122,7 +124,7 @@ class ObstacleMap(BaseMap):
             fov=np.rad2deg(topdown_fov),
             max_line_len=max_depth * self.pixels_per_meter,
         )
-        new_explored_area = cv2.dilate(new_explored_area, np.ones((3, 3), np.uint8), iterations=1)
+        new_explored_area = cv2.dilate(self._new_explored_area, np.ones((3, 3), np.uint8), iterations=1)
         self.explored_area[new_explored_area > 0] = 1
         self.explored_area[self._navigable_map == 0] = 0
         contours, _ = cv2.findContours(
