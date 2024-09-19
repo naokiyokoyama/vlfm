@@ -162,6 +162,7 @@ class VLFMTrainer(PPOTrainer):
         spl_sum = 0
         num_total = 0
         hab_vis = HabitatVis()
+        os.environ["dataset_size_vlfm"] = str(number_of_eval_episodes)
         while len(stats_episodes) < (number_of_eval_episodes * evals_per_ep) and self.envs.num_envs > 0:
             current_episodes_info = self.envs.current_episodes()
             os.environ["scene_ep_id"] = (
