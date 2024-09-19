@@ -247,7 +247,10 @@ class VLFMTrainer(PPOTrainer):
                     envs_to_pause.append(i)
 
                 if len(self.config.habitat_baselines.eval.video_option) > 0:
-                    hab_vis.collect_data(batch, infos, action_data.policy_info)
+                    try:
+                        hab_vis.collect_data(batch, infos, action_data.policy_info)
+                    except:
+                        hab_vis = HabitatVis()
 
                 # episode ended
                 if not not_done_masks[i].item():
@@ -284,19 +287,24 @@ class VLFMTrainer(PPOTrainer):
                         failure_cause = "Unknown"
 
                     if len(self.config.habitat_baselines.eval.video_option) > 0:
-                        rgb_frames[i] = hab_vis.flush_frames(failure_cause)
-                        generate_video(
-                            video_option=self.config.habitat_baselines.eval.video_option,
-                            video_dir=self.config.habitat_baselines.video_dir,
-                            images=rgb_frames[i],
-                            episode_id=current_episodes_info[i].episode_id,
-                            checkpoint_idx=checkpoint_index,
-                            metrics=extract_scalars_from_info(infos[i]),
-                            fps=self.config.habitat_baselines.video_fps,
-                            tb_writer=writer,
-                            keys_to_include_in_name=self.config.habitat_baselines.eval_keys_to_include_in_name,
-                        )
-
+                        try:
+                            rgb_frames[i] = hab_vis.flush_frames(failure_cause)
+                        except:
+                            hab_vis = HabitatVis()
+                        try:
+                            generate_video(
+                                video_option=self.config.habitat_baselines.eval.video_option,
+                                video_dir=self.config.habitat_baselines.video_dir,
+                                images=rgb_frames[i],
+                                episode_id=current_episodes_info[i].episode_id,
+                                checkpoint_idx=checkpoint_index,
+                                metrics=extract_scalars_from_info(infos[i]),
+                                fps=self.config.habitat_baselines.video_fps,
+                                tb_writer=writer,
+                                keys_to_include_in_name=self.config.habitat_baselines.eval_keys_to_include_in_name,
+                            )
+                        except:
+                            pass
                         rgb_frames[i] = []
 
                     gfx_str = infos[i].get(GfxReplayMeasure.cls_uuid, "")
