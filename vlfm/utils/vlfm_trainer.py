@@ -164,6 +164,9 @@ class VLFMTrainer(PPOTrainer):
         hab_vis = HabitatVis()
         while len(stats_episodes) < (number_of_eval_episodes * evals_per_ep) and self.envs.num_envs > 0:
             current_episodes_info = self.envs.current_episodes()
+            os.environ["scene_ep_id"] = (
+                f"{current_episodes_info[0].scene_id},{current_episodes_info[0].episode_id}"
+            )
 
             with inference_mode():
                 action_data = self._agent.actor_critic.act(
