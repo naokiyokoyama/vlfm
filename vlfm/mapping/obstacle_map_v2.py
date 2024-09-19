@@ -13,6 +13,7 @@ class ObstacleMapV2(ObstacleMap):
         super().__init__(*args, **kwargs)
         self.frontier_infos: List[Tuple[int, FrontierInfo]] = []
         self._f_position_to_f_info: Dict[Tuple[int, int], FrontierInfo] = {}
+        self._use_filtering = True
 
     def reset(self) -> None:
         super().reset()
@@ -79,6 +80,9 @@ class ObstacleMapV2(ObstacleMap):
             return  # No boundary contour found
         else:
             boundary_contour = boundary_contour[0]
-        inds_to_keep = filter_frontiers(frontier_infos, boundary_contour)
+        if self._use_filtering:
+            inds_to_keep = filter_frontiers(frontier_infos, boundary_contour)
+        else:
+            inds_to_keep = range(len(frontier_infos))
 
         self.frontier_infos = [(i, frontier_infos[i]) for i in inds_to_keep]
