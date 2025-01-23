@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Copyright [2023] Boston Dynamics AI Institute, Inc.
 
+VLFM_DIR=~/implicit_memory_navigation/vlfm
+VLFM_PYTHON=/coc/testnvme/nyokoyama3/miniconda3/envs/cobra_vlfm/bin/python
+COBRA_DIR=~/implicit_memory_navigation/cobra
+COBRA_PYTHON=/coc/testnvme/nyokoyama3/miniconda3/envs/cobra/bin/python
+
+# Save current environment variables to disk
+env_vars="/tmp/script_$(date +%Y%m%d_%H%M%S_%N).sh"
+env | sed 's/^/export /' > $env_vars
+
 # Ensure you have 'export VLFM_PYTHON=<PATH_TO_PYTHON>' in your .bashrc, where
 # <PATH_TO_PYTHON> is the path to the python executable for your conda env
 # (e.g., PATH_TO_PYTHON=`conda activate <env_name> && which python`)
@@ -27,11 +36,23 @@ tmux split-window -v -t ${session_name}:0
 tmux split-window -h -t ${session_name}:0.0
 tmux split-window -h -t ${session_name}:0.2
 
+# Check if the -c flag is set
+has_c=false
+while getopts "c" flag; do
+    case "${flag}" in
+        c) has_c=true;;
+    esac
+done
+
 # Run commands in each pane
-tmux send-keys -t ${session_name}:0.0 "${VLFM_PYTHON} -m vlfm.vlm.grounding_dino --port ${GROUNDING_DINO_PORT}" C-m
-tmux send-keys -t ${session_name}:0.1 "${VLFM_PYTHON} -m vlfm.vlm.blip2itm --port ${BLIP2ITM_PORT}" C-m
-tmux send-keys -t ${session_name}:0.2 "${VLFM_PYTHON} -m vlfm.vlm.sam --port ${SAM_PORT}" C-m
-tmux send-keys -t ${session_name}:0.3 "${VLFM_PYTHON} -m vlfm.vlm.yolov7 --port ${YOLOV7_PORT}" C-m
+#tmux send-keys -t ${session_name}:0.0 "cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.grounding_dino --port ${GROUNDING_DINO_PORT}" C-m
+if $has_c; then
+    tmux send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${COBRA_DIR} && ${COBRA_PYTHON} cobra/models/cobra_server.py --checkpoint ${COBRA_CKPT}" C-m
+else
+    tmux send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.blip2itm --port ${BLIP2ITM_PORT}" C-m
+fi
+tmux send-keys -t ${session_name}:0.2 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.sam --port ${SAM_PORT}" C-m
+tmux send-keys -t ${session_name}:0.3 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.yolov7 --port ${YOLOV7_PORT}" C-m
 
 # Attach to the tmux session to view the windows
 echo "Created tmux session '${session_name}'. You must wait up to 90 seconds for the model weights to finish being loaded."
