@@ -33,12 +33,14 @@ class HabitatConfigPlugin(SearchPathPlugin):
 
 register_hydra_plugin(HabitatConfigPlugin)
 
+import random
+import string
 import time
 import warnings
 from multiprocessing import shared_memory
 from typing import Any, Dict, Optional, Union
 
-import cv2, random, string
+import cv2
 import numpy as np
 import requests
 import torch
@@ -165,7 +167,9 @@ def wait_for_server(url, timeout=120, interval=1):
             pass
         time.sleep(interval)
         seconds_remaining = timeout - (time.time() - start_time)
-        print(f"Waiting for server to become ready... {int(seconds_remaining)}s remaining")
+        print(
+            f"Waiting for server to become ready... {int(seconds_remaining)}s remaining"
+        )
     print(f"Server did not become ready within {timeout} seconds")
     return False
 
@@ -176,7 +180,7 @@ class CobraPolicy(BaseObjectNavPolicy):
         self._video_hash: str = ""
         self._first_transmission: bool = True
         self._obstacle_map._use_filtering = False
-        self._episode_identifier: str = ''.join(
+        self._episode_identifier: str = "".join(
             random.choices(string.ascii_letters, k=8)
         )
 
@@ -185,7 +189,7 @@ class CobraPolicy(BaseObjectNavPolicy):
         # self._done_initializing = True  # Always True for CobraPolicy
         self._video_hash = str(int(time.time() * 10000))
         self._first_transmission = True
-        self._episode_identifier = ''.join(random.choices(string.ascii_letters, k=8))
+        self._episode_identifier = "".join(random.choices(string.ascii_letters, k=8))
 
     def act(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         ret = super().act(*args, **kwargs)
@@ -200,7 +204,10 @@ class CobraPolicy(BaseObjectNavPolicy):
             print(f"Not enough frontier groups to choose from ({len(images)}).")
             predicted_choice_index = 0
         else:
-            if not self._first_transmission or os.environ.get("NO_EXPLORATION", "0") == "1":
+            if (
+                not self._first_transmission
+                or os.environ.get("NO_EXPLORATION", "0") == "1"
+            ):
                 video = None
             else:
                 # video = self._observations_cache["video"]
@@ -226,7 +233,9 @@ class CobraPolicy(BaseObjectNavPolicy):
             )
             self._first_transmission = False
 
-        predicted_frontier_index, _ = self._obstacle_map.frontier_infos[predicted_choice_index]
+        predicted_frontier_index, _ = self._obstacle_map.frontier_infos[
+            predicted_choice_index
+        ]
         best_frontier = self._obstacle_map.frontiers[predicted_frontier_index]
         pointnav_action = self._pointnav(best_frontier, stop=False)
 
@@ -247,12 +256,15 @@ def video_to_numpy(video_path):
 
     return video_array
 
+
 def count_json_files(directory_path):
     json_count = 0
     for filename in os.listdir(directory_path):
-        if filename.endswith('.json'):
+        if filename.endswith(".json"):
             json_count += 1
     return json_count
+
+
 @baseline_registry.register_policy
 class HabitatCobraPolicy(HabitatMixin, CobraPolicy):
     pass
