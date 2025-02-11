@@ -1,6 +1,6 @@
 # Copyright (c) 2023 Boston Dynamics AI Institute LLC. All rights reserved.
 
-from typing import Any, Union
+from typing import Any, Union, List
 
 import cv2
 import numpy as np
@@ -19,6 +19,7 @@ class ObstacleMap(BaseMap):
 
     _map_dtype: np.dtype = np.dtype(bool)
     _frontiers_px: np.ndarray = np.array([])
+    _frontier_segments: List[np.ndarray] = []
     frontiers: np.ndarray = np.array([])
     radius_padding_color: tuple = (100, 100, 100)
 
@@ -52,6 +53,7 @@ class ObstacleMap(BaseMap):
         self._navigable_map.fill(0)
         self._new_explored_area.fill(0)
         self._frontiers_px = np.array([])
+        self._frontier_segments = []
         self.frontiers = np.array([])
 
     def update_map(
@@ -163,7 +165,7 @@ class ObstacleMap(BaseMap):
             np.ones((5, 5), np.uint8),
             iterations=1,
         )
-        frontiers = detect_frontier_waypoints(
+        frontiers, self._frontier_segments = detect_frontier_waypoints(
             self._navigable_map.astype(np.uint8),
             explored_area,
             self._area_thresh_in_pixels,
