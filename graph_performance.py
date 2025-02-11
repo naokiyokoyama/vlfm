@@ -46,6 +46,7 @@ def process_directory(directory: str, key: str) -> Dict[int, Tuple[float, int]]:
 
 def plot_results(
     all_results: Dict[str, Dict[int, Tuple[float, int]]],
+    key: str,
     output_path: str = "training_analysis.png",
 ):
     """Create and save a line plot of the results."""
@@ -63,7 +64,7 @@ def plot_results(
 
     plt.xlabel("Timestep")
     plt.ylabel("Average Value")
-    plt.title("Training Analysis")
+    plt.title(f"Training Analysis ({key})")
     plt.legend()
     plt.grid(True)
     plt.savefig(output_path)
@@ -80,7 +81,7 @@ def main():
             all_results[directory] = results
 
     if all_results:
-        plot_results(all_results)
+        plot_results(all_results, key)
     else:
         print("No valid data found in the provided directories")
 
