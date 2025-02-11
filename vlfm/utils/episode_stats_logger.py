@@ -36,6 +36,9 @@ def log_episode_stats(episode_id: int, scene_id: str, infos: Dict) -> str:
             **remove_numpy_arrays(infos_no_map),
         }
 
+        if "ignore" in infos["top_down_map"]:
+            data["ignore"] = infos["top_down_map"]["ignore"]
+
         log_episode(episode_id, scene, data)
 
     return failure_cause
