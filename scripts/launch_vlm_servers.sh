@@ -35,6 +35,7 @@ mkdir -p "$TMUX_TMPDIR"
 # Construct the expected socket path
 expected_socket_path="$TMUX_TMPDIR/tmux-$(id -u)/default"
 mkdir -p "$(dirname "$expected_socket_path")"
+chmod 700  "$(dirname "$expected_socket_path")"
 
 # Function to check if a tmux server is actually running
 is_tmux_running() {
@@ -105,4 +106,4 @@ tmux -S "$expected_socket_path" ls
 # Attach to the tmux session to view the windows
 echo "Created tmux session '${session_name}'. You must wait up to 90 seconds for the model weights to finish being loaded."
 echo "Run the following to monitor all the server commands:"
-echo "tmux attach-session -t ${session_name}"
+echo "tmux -S ${final_socket_path} attach-session -t ${session_name}"
