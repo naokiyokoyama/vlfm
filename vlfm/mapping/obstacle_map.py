@@ -120,8 +120,8 @@ class ObstacleMap(BaseMap):
             return
 
         # Update the explored area
-        agent_xy_location = tf_camera_to_episodic[:2, 3]
-        agent_pixel_location = self._xy_to_px(agent_xy_location.reshape(1, 2))[0]
+        agent_xy_location = tf_camera_to_episodic[:2, 3].reshape(1, 2)
+        agent_pixel_location = tuple(self._xy_to_px(agent_xy_location).reshape(2))
         self._new_explored_area = reveal_fog_of_war(
             top_down_map=self._navigable_map.astype(np.uint8),
             current_fog_of_war_mask=np.zeros_like(self._map, dtype=np.uint8),
@@ -130,10 +130,7 @@ class ObstacleMap(BaseMap):
             fov=np.rad2deg(topdown_fov),
             max_line_len=max_depth * self.pixels_per_meter,
         )
-        new_explored_area = cv2.dilate(
-            self._new_explored_area, np.ones((3, 3), np.uint8), iterations=1
-        )
-        self.explored_area[new_explored_area > 0] = 1
+        self.explored_area[self._new_explored_area > 0] = 1
         self.explored_area[self._navigable_map == 0] = 0
         contours, _ = cv2.findContours(
             self.explored_area.astype(np.uint8),
@@ -168,14 +165,9 @@ class ObstacleMap(BaseMap):
         """Returns the frontiers of the map."""
         # Dilate the explored area slightly to prevent small gaps between the explored
         # area and the unnavigable area from being detected as frontiers.
-        explored_area = cv2.dilate(
-            self.explored_area.astype(np.uint8),
-            np.ones((5, 5), np.uint8),
-            iterations=1,
-        )
         frontiers, self._frontier_segments = detect_frontier_waypoints(
             self._navigable_map.astype(np.uint8),
-            explored_area,
+            self.explored_area.astype(np.uint8),
             self._area_thresh_in_pixels,
         )
         return frontiers
