@@ -1,8 +1,10 @@
-from typing import Any, Dict, List, Tuple, Union
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
 
 import cv2
 import numpy as np
-from frontier_exploration.utils.frontier_filtering import FrontierInfo, filter_frontiers
+from frontier_exploration.utils.frontier_filtering import CallCounter, FrontierFilter
+from frontier_exploration.utils.segment_monitor import get_action
 
 from vlfm.mapping.obstacle_map import ObstacleMap
 from vlfm.utils.geometry_utils import extract_yaw
@@ -11,19 +13,39 @@ from vlfm.utils.geometry_utils import extract_yaw
 class ObstacleMapV2(ObstacleMap):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.frontier_infos: List[Tuple[int, FrontierInfo]] = []
-        self._f_position_to_f_info: Dict[Tuple[int, int], FrontierInfo] = {}
         self._use_filtering = True
-        self.selected_finfo_idx: int | None = None
+        self.selected_f_idx: int | None = None
         self._bad_idx_to_good_idx: Dict[int, int] = {}
+        self.frontier_filter: Optional[FrontierFilter] = None
+        self.call_count: int = 0
+        self.rgb_images: List[np.ndarray] = []
+        self.frontier_rgb_waypoints: List[FrontierRGBWaypoint] = []
+
+    def initialize_filter(self, fov, visibility_dist_in_pixels):
+        self.frontier_filter = FrontierFilter(fov, visibility_dist_in_pixels)
 
     def reset(self) -> None:
         super().reset()
-        self.frontier_infos = []
-        self._f_position_to_f_info = {}
-        self.selected_finfo_idx = None
+        self.selected_f_idx = None
+        if self.frontier_filter is not None:
+            self.frontier_filter.reset()
         self._bad_idx_to_good_idx = {}
+        self.call_count = 0
+        self.rgb_images = []
+        self.frontier_rgb_waypoints = []
 
+    @property
+    def _frontier_segments_yx(self) -> List[np.ndarray]:
+        curr_f_segments = []
+        for fs in self._frontier_segments:
+            # Swap the x and y coordinates
+            new_fs = np.zeros((fs.shape[0], 2), dtype=np.int32)
+            new_fs[:, 0] = fs[:, 1]
+            new_fs[:, 1] = fs[:, 0]
+            curr_f_segments.append(new_fs)
+        return curr_f_segments
+
+    @CallCounter
     def update_map(
         self,
         rgb: np.ndarray,
@@ -48,51 +70,52 @@ class ObstacleMapV2(ObstacleMap):
             explore,
             update_obstacles,
         )
-        yaw = extract_yaw(tf_camera_to_episodic)
+        self.rgb_images.append(rgb)
+        agent_xy_location = tf_camera_to_episodic[:2, 3].reshape(1, 2)
+        agent_pixel_location = self._xy_to_px(agent_xy_location).reshape(2)
+
+        if self.frontier_filter is None:
+            self.initialize_filter(
+                np.degrees(topdown_fov), int(max_depth * self.pixels_per_meter * 2)
+            )
+
+        (
+            good_indices_to_timestep,
+            self._bad_idx_to_good_idx,
+        ) = self.frontier_filter.score_and_filter_frontiers(
+            curr_f_segments=self._frontier_segments_yx,
+            curr_cam_yaw=-extract_yaw(tf_camera_to_episodic),
+            curr_cam_pos=agent_pixel_location[::-1],
+            top_down_map=self._navigable_map.astype(np.uint8),
+            curr_timestep_id=self.call_count,
+            filter=self._use_filtering,
+        )
+
+        self.frontier_rgb_waypoints = [
+            FrontierRGBWaypoint(
+                rgb=self.rgb_images[t_step], waypoint=self.frontiers[f_idx]
+            )
+            for f_idx, t_step in good_indices_to_timestep.items()
+        ]
+
+    def get_action(
+        self,
+        tf_camera_to_episodic: np.ndarray,
+        topdown_fov: float,
+        max_depth: float,
+        turn_angle: float = np.radians(30),
+    ) -> np.ndarray:
         agent_xy_location = tf_camera_to_episodic[:2, 3].reshape(1, 2)
         agent_pixel_location = tuple(self._xy_to_px(agent_xy_location).reshape(2))
-
-        frontier_infos = []
-        # keys_to_del = set(self._f_position_to_f_info.keys())
-
-        for f_px in self._frontiers_px:
-            f_px_tuple: Tuple[int, int] = tuple(f_px)  # noqa
-            if f_px_tuple not in self._f_position_to_f_info:
-                f_info = FrontierInfo(
-                    camera_position_px=agent_pixel_location,
-                    frontier_position_px=f_px_tuple,
-                    single_fog_of_war=self._new_explored_area,
-                    agent_pose=[0, 0, 0, yaw],  # only yaw; we have camera_position_px
-                    frontier_position=None,
-                    rgb_img=rgb,
-                )
-                self._f_position_to_f_info[f_px_tuple] = f_info
-            else:
-                f_info = self._f_position_to_f_info[f_px_tuple]
-                # keys_to_del.remove(f_px)
-
-            frontier_infos.append(f_info)
-
-        # for k in keys_to_del:
-        #     del self._f_position_to_f_info[k]
-
-        explored_uint8 = np.array(self.explored_area, dtype=np.uint8)
-        boundary_contour = cv2.findContours(
-            explored_uint8, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
-        )[0]
-        if len(boundary_contour) == 0:
-            return  # No boundary contour found
-        else:
-            boundary_contour = boundary_contour[0]
-        if self._use_filtering:
-            inds_to_keep, self._bad_idx_to_good_idx = filter_frontiers(
-                frontier_infos, boundary_contour
-            )
-        else:
-            inds_to_keep = range(len(frontier_infos))
-            self._bad_idx_to_good_idx = {}
-
-        self.frontier_infos = [(i, frontier_infos[i]) for i in inds_to_keep]
+        return get_action(
+            frontier_segments=self._frontier_segments_yx,
+            obstacle_map=self._navigable_map.astype(np.uint8),
+            camera_pos=agent_pixel_location[::-1],
+            camera_yaw=-extract_yaw(tf_camera_to_episodic),
+            fov=np.degrees(topdown_fov),
+            max_line_len=int(max_depth * self.pixels_per_meter),
+            turn_angle=turn_angle,
+        )
 
     def visualize(self) -> np.ndarray:
         """Visualizes the map."""
@@ -102,21 +125,22 @@ class ObstacleMapV2(ObstacleMap):
         # Draw the frontier segments in blue, and the selected frontier in pink;
         # also draw the frontier midpoint in white. Alter the midpoint's color based on
         # whether it is active or not (light gray or black)
-        active_inds = set([info[0] for info in self.frontier_infos])
-        if self.selected_finfo_idx is not None:
-            selected_idx = self.frontier_infos[self.selected_finfo_idx][0]
-        else:
-            selected_idx = -1
+        selected_pt = (
+            np.full((3,), np.nan)
+            if self.selected_f_idx is None
+            else self.frontier_rgb_waypoints[self.selected_f_idx].waypoint
+        )
         for idx, waypoint in enumerate(self._frontiers_px):
-            if idx == selected_idx:
-                boundary_color = (255, 0, 255)
-            else:
-                boundary_color = (255, 0, 0)
+            boundary_color = (
+                (255, 0, 255)  # Pink
+                if np.array_equal(self.frontiers[idx], selected_pt)
+                else (0, 0, 255)  # Blue
+            )
 
-            if idx in active_inds:
-                frontier_midpoint_color = (0, 0, 0)
-            else:
+            if idx in self._bad_idx_to_good_idx:
                 frontier_midpoint_color = (200, 200, 200)
+            else:
+                frontier_midpoint_color = (0, 0, 0)
 
             # Draw frontier segments forming its boundary
             p_px = self._frontier_segments[idx].reshape((-1, 1, 2))
@@ -142,11 +166,20 @@ class ObstacleMapV2(ObstacleMap):
 
         # Visualize which frontiers were filtered out by which active frontier
         for bad_idx, good_idx in self._bad_idx_to_good_idx.items():
-            bad_waypoint = self._frontiers_px[bad_idx].astype(np.int32)
-            good_waypoint = self._frontiers_px[good_idx].astype(np.int32)
+            try:
+                bad_waypoint = self._frontiers_px[bad_idx].astype(np.int32)
+                good_waypoint = self._frontiers_px[good_idx].astype(np.int32)
+            except IndexError:
+                continue
 
             cv2.line(vis_img, bad_waypoint, good_waypoint, (0, 0, 255), 1)
 
         vis_img = cv2.flip(vis_img, 0)
 
         return vis_img
+
+
+@dataclass(frozen=True)
+class FrontierRGBWaypoint:
+    rgb: np.ndarray
+    waypoint: np.ndarray
