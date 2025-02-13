@@ -18,8 +18,8 @@ from vlfm.utils.img_utils import (
     resize_images,
     rotate_image,
 )
-from vlfm.utils.visualization import add_text_to_image, pad_images
-
+from vlfm.utils.visualization import pad_images
+from frontier_exploration.utils.viz import add_text_to_image
 
 class HabitatVis:
     def __init__(self) -> None:
@@ -31,6 +31,7 @@ class HabitatVis:
         self.using_vis_maps = False
         self.using_annotated_rgb = False
         self.using_annotated_depth = False
+        self._map_bbox: np.ndarray | None = None
 
     def reset(self) -> None:
         self.rgb = []
@@ -40,6 +41,7 @@ class HabitatVis:
         self.texts = []
         self.using_annotated_rgb = False
         self.using_annotated_depth = False
+        self._map_bbox = None
 
     def collect_data(
         self,
@@ -69,6 +71,15 @@ class HabitatVis:
         color_point_cloud_on_map(infos, policy_info)
 
         map = maps.colorize_draw_agent_and_fit_to_height(infos[0]["top_down_map"], self.depth[0].shape[0])
+        if self._map_bbox is None:
+            not_white = ~np.all(map == np.array([255, 255, 255], dtype=map.dtype), axis=2)
+            x, y, w, h = cv2.boundingRect(not_white.astype(np.uint8))
+            y_min, y_max = max(0, y - 15), min(map.shape[0], y + h + 15)
+            x_min, x_max = max(0, x - 15), min(map.shape[1], x + w + 15)
+            self._map_bbox = np.array([y_min, y_max, x_min, x_max])
+        else:
+            y_min, y_max, x_min, x_max = self._map_bbox
+            map = map[y_min:y_max, x_min:x_max]
         self.maps.append(map)
         vis_map_imgs = [
             self._reorient_rescale_habitat_map(infos, policy_info[0][vkey])
@@ -108,6 +119,8 @@ class HabitatVis:
             )
             failure_cause_text = "Failure cause: " + failure_cause
             frame = add_text_to_image(frame, failure_cause_text, top=True)
+            step_count = f"Step {i}/{num_frames - 1}"
+            frame = add_text_to_image(frame, step_count, top=True, above_padding=10)
             frames.append(frame)
 
         if len(frames) > 0:
