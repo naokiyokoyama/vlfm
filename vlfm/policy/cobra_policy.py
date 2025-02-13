@@ -1,7 +1,6 @@
 import os
 import random
 import string
-import time
 import warnings
 from multiprocessing import shared_memory
 from typing import Any, Dict, List, Optional, Union
@@ -16,6 +15,7 @@ from torch import Tensor
 from vlfm.mapping.obstacle_map_v2 import FrontierRGBWaypoint
 from vlfm.policy.base_objectnav_policy import BaseObjectNavPolicy
 from vlfm.policy.habitat_policies import HabitatMixin, TorchActionIDs
+from vlfm.vlm.server_wrapper import wait_for_server
 
 warnings.filterwarnings("ignore")
 
@@ -215,31 +215,3 @@ def cobra_request(
                 shm.unlink()
             except Exception:
                 pass
-
-
-def wait_for_server(url, timeout=120, interval=1):
-    """
-    Wait for the server to become ready.
-
-    :param url: The URL of the server's health check endpoint
-    :param timeout: Maximum time to wait (in seconds)
-    :param interval: Time between attempts (in seconds)
-    :return: True if the server is ready, False if it timed out
-    """
-    start_time = time.time()
-    print(f"Waiting for server at {url} to become ready...")
-    while time.time() - start_time < timeout:
-        try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                print(f"Server at {url} is ready!")
-                return True
-        except requests.RequestException:
-            pass
-        time.sleep(interval)
-        seconds_remaining = timeout - (time.time() - start_time)
-        print(
-            f"Waiting for server to become ready... {int(seconds_remaining)}s remaining"
-        )
-    print(f"Server did not become ready within {timeout} seconds")
-    return False

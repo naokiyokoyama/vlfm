@@ -19,6 +19,7 @@ from vlfm.vlm.blip2 import BLIP2Client
 from vlfm.vlm.coco_classes import COCO_CLASSES
 from vlfm.vlm.grounding_dino import GroundingDINOClient, ObjectDetections
 from vlfm.vlm.sam import MobileSAMClient
+from vlfm.vlm.server_wrapper import wait_for_server
 from vlfm.vlm.yolov7 import YOLOv7Client
 
 try:
@@ -64,6 +65,9 @@ class BaseObjectNavPolicy(BasePolicy):
         self._object_detector = GroundingDINOClient(port=int(os.environ.get("GROUNDING_DINO_PORT", "12181")))
         self._coco_object_detector = YOLOv7Client(port=int(os.environ.get("YOLOV7_PORT", "12184")))
         self._mobile_sam = MobileSAMClient(port=int(os.environ.get("SAM_PORT", "12183")))
+        wait_for_server(self._object_detector.url + "/health", timeout=500)
+        wait_for_server(self._coco_object_detector.url + "/health", timeout=500)
+        wait_for_server(self._mobile_sam.url + "/health", timeout=500)
         self._use_vqa = use_vqa
         if use_vqa:
             self._vqa = BLIP2Client(port=int(os.environ.get("BLIP2_PORT", "12185")))
