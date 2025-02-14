@@ -5,6 +5,7 @@ from typing import Any, List, Union
 import cv2
 import numpy as np
 from frontier_exploration.frontier_detection import detect_frontier_waypoints
+from frontier_exploration.utils.composite_fow import CompositeFOWMixin
 from frontier_exploration.utils.fog_of_war import reveal_fog_of_war
 
 from vlfm.mapping.base_map import BaseMap
@@ -12,15 +13,12 @@ from vlfm.utils.geometry_utils import extract_yaw, get_point_cloud, transform_po
 from vlfm.utils.img_utils import fill_small_holes
 
 
-class ObstacleMap(BaseMap):
+class ObstacleMap(CompositeFOWMixin, BaseMap):
     """Generates two maps; one representing the area that the robot has explored so far,
     and another representing the obstacles that the robot has seen so far.
     """
 
     _map_dtype: np.dtype = np.dtype(bool)
-    _frontiers_px: np.ndarray = np.array([])
-    _frontier_segments: List[np.ndarray] = []
-    frontiers: np.ndarray = np.array([])
     radius_padding_color: tuple = (100, 100, 100)
 
     def __init__(
@@ -34,10 +32,11 @@ class ObstacleMap(BaseMap):
         pixels_per_meter: int = 20,
     ):
         super().__init__(size, pixels_per_meter)
-        self.explored_area = np.zeros((size, size), dtype=bool)
-        self._new_explored_area = np.zeros((size, size), dtype=bool)
         self._map = np.zeros((size, size), dtype=bool)
         self._navigable_map = np.zeros((size, size), dtype=bool)
+        self.frontiers: np.ndarray = np.array([])
+        self._frontiers_px: np.ndarray = np.array([])
+        self._frontier_segments: List[np.ndarray] = []
         self._min_height = min_height
         self._max_height = max_height
         self._area_thresh_in_pixels = area_thresh * (self.pixels_per_meter**2)
@@ -47,14 +46,16 @@ class ObstacleMap(BaseMap):
         kernel_size = int(kernel_size) + (int(kernel_size) % 2 == 0)
         self._navigable_kernel = np.ones((kernel_size, kernel_size), np.uint8)
 
+    @property
+    def explored_area(self) -> np.ndarray:
+        return self.full_mask
+
     def reset(self) -> None:
         super().reset()
-        self.explored_area.fill(0)
         self._navigable_map.fill(0)
-        self._new_explored_area.fill(0)
+        self.frontiers = np.array([])
         self._frontiers_px = np.array([])
         self._frontier_segments = []
-        self.frontiers = np.array([])
 
     def update_map(
         self,
@@ -121,56 +122,39 @@ class ObstacleMap(BaseMap):
 
         # Update the explored area
         agent_xy_location = tf_camera_to_episodic[:2, 3].reshape(1, 2)
-        agent_pixel_location = tuple(self._xy_to_px(agent_xy_location).reshape(2))
-        self._new_explored_area = reveal_fog_of_war(
-            top_down_map=self._navigable_map.astype(np.uint8),
-            current_fog_of_war_mask=np.zeros_like(self._map, dtype=np.uint8),
-            current_point=agent_pixel_location[::-1],
-            current_angle=-extract_yaw(tf_camera_to_episodic),
+        agent_pixel_location = self._xy_to_px(agent_xy_location).reshape(2)[::-1]
+        self.add_fow(
+            fow=reveal_fog_of_war(
+                top_down_map=self._navigable_map.astype(np.uint8),
+                current_fog_of_war_mask=np.zeros_like(self._map, dtype=np.uint8),
+                current_point=agent_pixel_location,
+                current_angle=-extract_yaw(tf_camera_to_episodic),
+                fov=np.rad2deg(topdown_fov),
+                max_line_len=max_depth * self.pixels_per_meter,
+            ),
+            fow_position=agent_pixel_location,
+            fow_yaw=-extract_yaw(tf_camera_to_episodic),
             fov=np.rad2deg(topdown_fov),
-            max_line_len=max_depth * self.pixels_per_meter,
+            fov_length_px=max_depth * self.pixels_per_meter,
+            obstacle_map=self._navigable_map.astype(np.uint8),
         )
-        self.explored_area[self._new_explored_area > 0] = 1
-        self.explored_area[self._navigable_map == 0] = 0
-        contours, _ = cv2.findContours(
-            self.explored_area.astype(np.uint8),
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE,
-        )
-        if len(contours) > 1:
-            min_dist = np.inf
-            best_idx = 0
-            for idx, cnt in enumerate(contours):
-                dist = cv2.pointPolygonTest(
-                    cnt, tuple([int(i) for i in agent_pixel_location]), True
-                )
-                if dist >= 0:
-                    best_idx = idx
-                    break
-                elif abs(dist) < min_dist:
-                    min_dist = abs(dist)
-                    best_idx = idx
-            new_area = np.zeros_like(self.explored_area, dtype=np.uint8)
-            cv2.drawContours(new_area, contours, best_idx, 1, -1)  # type: ignore
-            self.explored_area = new_area.astype(bool)
 
         # Compute frontier locations
-        self._frontiers_px = self._get_frontiers()
-        if len(self._frontiers_px) == 0:
-            self.frontiers = np.array([])
-        else:
-            self.frontiers = self._px_to_xy(self._frontiers_px)
+        self._update_frontiers()
 
-    def _get_frontiers(self) -> np.ndarray:
+    def _update_frontiers(self) -> None:
         """Returns the frontiers of the map."""
         # Dilate the explored area slightly to prevent small gaps between the explored
         # area and the unnavigable area from being detected as frontiers.
-        frontiers, self._frontier_segments = detect_frontier_waypoints(
+        self._frontiers_px, self._frontier_segments = detect_frontier_waypoints(
             self._navigable_map.astype(np.uint8),
             self.explored_area.astype(np.uint8),
             self._area_thresh_in_pixels,
         )
-        return frontiers
+        if len(self._frontiers_px) == 0:
+            self.frontiers = np.array([])
+        else:
+            self.frontiers = self._px_to_xy(self._frontiers_px)
 
     def visualize(self) -> np.ndarray:
         """Visualizes the map."""

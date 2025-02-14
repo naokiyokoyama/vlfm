@@ -3,7 +3,7 @@ import random
 import string
 import warnings
 from multiprocessing import shared_memory
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import cv2
 import numpy as np
@@ -28,6 +28,8 @@ class CobraPolicy(BaseObjectNavPolicy):
         self._episode_identifier: str = "".join(
             random.choices(string.ascii_letters, k=8)
         )
+        self._prev_frontiers: Set[Tuple[int]] = set()
+        self._blacklist: Set[Tuple[float, float, float]] = set()
         self._cobra_port = os.environ.get("COBRA_PORT", "5000")
         wait_for_server(f"http://127.0.0.1:{self._cobra_port}/health", timeout=500)
 
@@ -35,6 +37,8 @@ class CobraPolicy(BaseObjectNavPolicy):
         super()._reset()
         self._first_transmission = True
         self._episode_identifier = "".join(random.choices(string.ascii_letters, k=8))
+        self._prev_frontiers = set()
+        self._blacklist = set()
 
     def _explore(self, observations: Union[Dict[str, Tensor], "TensorDict"]) -> Tensor:
         if len(self._obstacle_map.frontiers) == 0:
@@ -52,6 +56,19 @@ class CobraPolicy(BaseObjectNavPolicy):
                 return TorchActionIDs.TURN_LEFT
             else:
                 return TorchActionIDs.TURN_RIGHT
+        curr_frontier_set = set(
+            tuple(f) for f in self._obstacle_map.frontiers_px.tolist()
+        )
+        if curr_frontier_set == self._prev_frontiers:
+            self._send_only_current()
+            act = self._pointnav(self._obstacle_map.selected_waypoint, stop=False)
+            if act.item() == 0:
+                self._blacklist.add(
+                    tuple(self._obstacle_map.selected_waypoint.tolist())  # noqa
+                )
+            else:
+                return act
+        self._prev_frontiers = curr_frontier_set
 
         # Retrieve video
         if not self._first_transmission or os.environ.get("NO_EXPLORATION", "0") == "1":
@@ -70,18 +87,31 @@ class CobraPolicy(BaseObjectNavPolicy):
             print(f"Video shape: {video.shape}")
 
         # Retrieve the images of all the frontiers from the obstacle map
-        frontier_rgb_waypoints: List[FrontierRGBWaypoint] = (
-            self._obstacle_map.frontier_rgb_waypoints
-        )
+        frontier_rgb_waypoints: List[FrontierRGBWaypoint] = [
+            i
+            for i in self._obstacle_map.frontier_rgb_waypoints
+            if tuple(i.waypoint.tolist()) not in self._blacklist
+        ]
+        if not frontier_rgb_waypoints:
+            # All frontiers are blacklisted. Return STOP action.
+            return TorchActionIDs.STOP
+
         frontier_images = [f.rgb for f in frontier_rgb_waypoints]
         all_images = np.stack(
             [self._observations_cache["object_map_rgbd"][0][0]] + frontier_images
         )
 
         pred_idx = self._send_request(all_images, video)
-        self._obstacle_map.selected_f_idx = pred_idx
+        self._obstacle_map.selected_waypoint = frontier_rgb_waypoints[pred_idx].waypoint
 
-        return self._pointnav(frontier_rgb_waypoints[pred_idx].waypoint, stop=False)
+        act = self._pointnav(frontier_rgb_waypoints[pred_idx].waypoint, stop=False)
+        if act.item() == 0 and len(frontier_rgb_waypoints) > 1:
+            self._blacklist.add(
+                tuple(frontier_rgb_waypoints[pred_idx].waypoint.tolist())  # noqa
+            )
+            # Try again
+            return self._explore(observations)
+        return act
 
     def _send_request(
         self, images: np.ndarray, video: Optional[np.ndarray] = None

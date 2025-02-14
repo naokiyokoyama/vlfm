@@ -14,7 +14,7 @@ class ObstacleMapV2(ObstacleMap):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._use_filtering = True
-        self.selected_f_idx: int | None = None
+        self.selected_waypoint: np.ndarray = np.full((3,), np.nan)
         self._bad_idx_to_good_idx: Dict[int, int] = {}
         self.frontier_filter: Optional[FrontierFilter] = None
         self.call_count: int = 0
@@ -26,7 +26,7 @@ class ObstacleMapV2(ObstacleMap):
 
     def reset(self) -> None:
         super().reset()
-        self.selected_f_idx = None
+        self.selected_waypoint = np.full((3,), np.nan)
         if self.frontier_filter is not None:
             self.frontier_filter.reset()
         self._bad_idx_to_good_idx = {}
@@ -44,6 +44,10 @@ class ObstacleMapV2(ObstacleMap):
             new_fs[:, 1] = fs[:, 0]
             curr_f_segments.append(new_fs)
         return curr_f_segments
+
+    @property
+    def frontiers_px(self):
+        return self._frontiers_px
 
     @CallCounter
     def update_map(
@@ -72,7 +76,7 @@ class ObstacleMapV2(ObstacleMap):
         )
         self.rgb_images.append(rgb)
         agent_xy_location = tf_camera_to_episodic[:2, 3].reshape(1, 2)
-        agent_pixel_location = self._xy_to_px(agent_xy_location).reshape(2)
+        agent_pixel_location = self._xy_to_px(agent_xy_location).reshape(2)[::-1]
 
         if self.frontier_filter is None:
             self.initialize_filter(
@@ -107,7 +111,7 @@ class ObstacleMapV2(ObstacleMap):
     ) -> np.ndarray:
         agent_xy_location = tf_camera_to_episodic[:2, 3].reshape(1, 2)
         agent_pixel_location = tuple(self._xy_to_px(agent_xy_location).reshape(2))
-        return get_action(
+        action = get_action(
             frontier_segments=self._frontier_segments_yx,
             obstacle_map=self._navigable_map.astype(np.uint8),
             camera_pos=agent_pixel_location[::-1],
@@ -116,6 +120,7 @@ class ObstacleMapV2(ObstacleMap):
             max_line_len=int(max_depth * self.pixels_per_meter),
             turn_angle=turn_angle,
         )
+        return action
 
     def visualize(self) -> np.ndarray:
         """Visualizes the map."""
@@ -125,15 +130,10 @@ class ObstacleMapV2(ObstacleMap):
         # Draw the frontier segments in blue, and the selected frontier in pink;
         # also draw the frontier midpoint in white. Alter the midpoint's color based on
         # whether it is active or not (light gray or black)
-        selected_pt = (
-            np.full((3,), np.nan)
-            if self.selected_f_idx is None
-            else self.frontier_rgb_waypoints[self.selected_f_idx].waypoint
-        )
         for idx, waypoint in enumerate(self._frontiers_px):
             boundary_color = (
                 (255, 0, 255)  # Pink
-                if np.array_equal(self.frontiers[idx], selected_pt)
+                if np.array_equal(self.frontiers[idx], self.selected_waypoint)
                 else (0, 0, 255)  # Blue
             )
 
@@ -141,6 +141,9 @@ class ObstacleMapV2(ObstacleMap):
                 frontier_midpoint_color = (200, 200, 200)
             else:
                 frontier_midpoint_color = (0, 0, 0)
+
+            if np.array_equal(self.frontiers[idx], self.selected_waypoint):
+                frontier_midpoint_color = (255, 0, 255)
 
             # Draw frontier segments forming its boundary
             p_px = self._frontier_segments[idx].reshape((-1, 1, 2))
