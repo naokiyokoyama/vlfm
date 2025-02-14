@@ -77,9 +77,8 @@ class HabitatVis:
             y_min, y_max = max(0, y - 15), min(map.shape[0], y + h + 15)
             x_min, x_max = max(0, x - 15), min(map.shape[1], x + w + 15)
             self._map_bbox = np.array([y_min, y_max, x_min, x_max])
-        else:
-            y_min, y_max, x_min, x_max = self._map_bbox
-            map = map[y_min:y_max, x_min:x_max]
+        y_min, y_max, x_min, x_max = self._map_bbox
+        map = map[y_min:y_max, x_min:x_max]
         self.maps.append(map)
         vis_map_imgs = [
             self._reorient_rescale_habitat_map(infos, policy_info[0][vkey])
