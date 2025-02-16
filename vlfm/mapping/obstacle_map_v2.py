@@ -3,7 +3,11 @@ from typing import Any, Dict, List, Optional, Union
 
 import cv2
 import numpy as np
-from frontier_exploration.utils.frontier_filtering import CallCounter, FrontierFilter
+from frontier_exploration.utils.frontier_filtering import (
+    CallCounter,
+    FrontierFilter,
+    FrontierFilterData,
+)
 from frontier_exploration.utils.segment_monitor import get_action
 
 from vlfm.mapping.obstacle_map import ObstacleMap
@@ -83,23 +87,25 @@ class ObstacleMapV2(ObstacleMap):
                 np.degrees(topdown_fov), int(max_depth * self.pixels_per_meter * 2)
             )
 
-        (
-            good_indices_to_timestep,
-            self._bad_idx_to_good_idx,
-        ) = self.frontier_filter.score_and_filter_frontiers(
-            curr_f_segments=self._frontier_segments_yx,
-            curr_cam_yaw=-extract_yaw(tf_camera_to_episodic),
-            curr_cam_pos=agent_pixel_location[::-1],
-            top_down_map=self._navigable_map.astype(np.uint8),
-            curr_timestep_id=self.call_count,
-            filter=self._use_filtering,
+        result: FrontierFilterData = (
+            self.frontier_filter.score_and_filter_frontiers(
+                curr_f_segments=self._frontier_segments_yx,
+                curr_cam_yaw=-extract_yaw(tf_camera_to_episodic),
+                curr_cam_pos=agent_pixel_location,
+                top_down_map=self._navigable_map.astype(np.uint8),
+                curr_timestep_id=self.call_count,
+                filter=self._use_filtering,
+            )
         )
+
+        d = result.filtered if self._use_filtering else result.unfiltered
+        self._bad_idx_to_good_idx = d.bad_idx_to_good_idx
 
         self.frontier_rgb_waypoints = [
             FrontierRGBWaypoint(
                 rgb=self.rgb_images[t_step], waypoint=self.frontiers[f_idx]
             )
-            for f_idx, t_step in good_indices_to_timestep.items()
+            for f_idx, t_step in d.good_indices_to_timestep.items()
         ]
 
     def get_action(
