@@ -24,6 +24,7 @@ import vlfm.measurements.traveled_stairs  # noqa: F401
 import vlfm.obs_transformers.resize  # noqa: F401
 import vlfm.policy.action_replay_policy  # noqa: F401
 import vlfm.policy.cobra_policy  # noqa: F401
+import vlfm.policy.cobra_tour_sensor  # noqa: F401
 import vlfm.policy.habitat_policies  # noqa: F401
 import vlfm.utils.vlfm_trainer  # noqa: F401
 
