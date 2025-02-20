@@ -3,8 +3,6 @@
 
 VLFM_DIR=~/implicit_memory_navigation/vlfm
 VLFM_PYTHON=/coc/testnvme/nyokoyama3/miniconda3/envs/cobra_vlfm/bin/python
-COBRA_DIR=~/implicit_memory_navigation/cobra
-COBRA_PYTHON=${COBRA_PYTHON:-/coc/testnvme/nyokoyama3/miniconda3/envs/cobra/bin/python}
 
 # Save current environment variables to disk
 env_vars="/tmp/script_$(date +%Y%m%d_%H%M%S_%N).sh"
@@ -25,85 +23,40 @@ export SAM_PORT=${SAM_PORT:-12183}
 export YOLOV7_PORT=${YOLOV7_PORT:-12184}
 export COBRA_PORT=${COBRA_PORT:-12185}
 
-session_name=vlm_servers_${RANDOM}
-# Set the desired socket directory
-echo "Directory path for tmux: $TMUX_TMPDIR"
-
-# Ensure the directory exists
-mkdir -p "$TMUX_TMPDIR"
-
-# Construct the expected socket path
-expected_socket_path="$TMUX_TMPDIR/tmux-$(id -u)/default"
-mkdir -p "$(dirname "$expected_socket_path")"
-chmod 700  "$(dirname "$expected_socket_path")"
-
-# Function to check if a tmux server is actually running
-is_tmux_running() {
-    tmux list-sessions -F "#{socket_path}" >/dev/null 2>&1
-    return $?
-}
-
-# Function to safely clean up stale socket
-cleanup_stale_socket() {
-    local socket_path="$1"
-    if [ -S "$socket_path" ]; then
-        echo "Found stale socket at $socket_path, removing it..."
-        rm -f "$socket_path"
-    fi
-}
-
-# Try to get current socket path
-curr_socket_path=$(tmux display -pF '#{socket_path}' 2>/dev/null || echo "")
-echo "Current tmux socket path: ${curr_socket_path:-"(no server running)"}"
-
-# Check for and handle stale socket
-if ! is_tmux_running; then
-    cleanup_stale_socket "$expected_socket_path"
-elif [ -n "$curr_socket_path" ] && [ "$curr_socket_path" != "$expected_socket_path" ]; then
-    echo "Found tmux server using incorrect socket path: $curr_socket_path"
-    echo "Expected path: $expected_socket_path"
-    echo "Killing tmux server to allow use of correct path..."
-    tmux kill-server
-    cleanup_stale_socket "$expected_socket_path"
-fi
+export tm=${tm:-"tmux"}
+export session_name=${VLM_SESSION_NAME:-vlm_servers_${RANDOM}}
 
 # Create a new detached session with explicit socket path
 echo "Creating new tmux session..."
-tmux -S "$expected_socket_path" new-session -d -s "${session_name}" 2>/dev/null || true
+$tm new-session -d -s "${session_name}" 2>/dev/null || true
 
-# Verify the final socket path
-final_socket_path=$(tmux -S "$expected_socket_path" display -pF '#{socket_path}' 2>/dev/null || echo "(failed to create session)")
-echo "Deploying at tmux socket path: $final_socket_path"
-
-# Split the window vertically
-tmux -S "$expected_socket_path" split-window -v -t ${session_name}:0
-
-# Split both panes horizontally
-tmux -S "$expected_socket_path" split-window -h -t ${session_name}:0.0
-tmux -S "$expected_socket_path" split-window -h -t ${session_name}:0.2
-
-# Check if the -c flag is set
-has_c=false
-while getopts "c" flag; do
+# Check if the -o flag is set
+has_o=false
+while getopts "o" flag; do
     case "${flag}" in
-        c) has_c=true;;
+        o) has_o=true;;
     esac
 done
 
-# Run commands in each pane
-#tmux send-keys -t ${session_name}:0.0 "cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.grounding_dino --port ${GROUNDING_DINO_PORT}" C-m
-if $has_c; then
-    tmux -S "$expected_socket_path" send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${COBRA_DIR} && ${COBRA_PYTHON} cobra/models/cobra_server.py --checkpoint ${COBRA_CKPT} --port ${COBRA_PORT}" C-m
-else
-    tmux -S "$expected_socket_path" send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.blip2itm --port ${BLIP2ITM_PORT}" C-m
+# Split the window into 2 or 3 panes
+$tm split-window -v -t ${session_name}:0
+if $has_o; then
+    $tm split-window -v -t ${session_name}:0.0
 fi
-tmux -S "$expected_socket_path" send-keys -t ${session_name}:0.2 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.sam --port ${SAM_PORT}" C-m
-tmux -S "$expected_socket_path" send-keys -t ${session_name}:0.3 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.yolov7 --port ${YOLOV7_PORT}" C-m
+
+# Resize the panes so they are all equal size
+$tm select-layout -t ${session_name}:0 even-vertical
+
+# Run commands in each pane
+$tm send-keys -t ${session_name}:0.0 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.sam --port ${SAM_PORT}" C-m
+$tm send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.yolov7 --port ${YOLOV7_PORT}" C-m
+if $has_o; then
+    $tm send-keys -t ${session_name}:0.2 "cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.grounding_dino --port ${GROUNDING_DINO_PORT}" C-m
+fi
 
 echo "List of tmux windows:"
-tmux -S "$expected_socket_path" ls
+$tm ls
 
-# Attach to the tmux session to view the windows
 echo "Created tmux session '${session_name}'. You must wait up to 90 seconds for the model weights to finish being loaded."
 echo "Run the following to monitor all the server commands:"
-echo "tmux -S ${final_socket_path} attach-session -t ${session_name}"
+echo "${tm} attach-session -t ${session_name}"
