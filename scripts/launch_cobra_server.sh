@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Copyright [2023] Boston Dynamics AI Institute, Inc.
 
-VLFM_DIR=~/implicit_memory_navigation/vlfm
-VLFM_PYTHON=/coc/testnvme/nyokoyama3/miniconda3/envs/cobra_vlfm/bin/python
 COBRA_DIR=~/implicit_memory_navigation/cobra
 COBRA_PYTHON=${COBRA_PYTHON:-/coc/testnvme/nyokoyama3/miniconda3/envs/cobra/bin/python}
 
@@ -10,11 +7,6 @@ COBRA_PYTHON=${COBRA_PYTHON:-/coc/testnvme/nyokoyama3/miniconda3/envs/cobra/bin/
 env_vars="/tmp/script_$(date +%Y%m%d_%H%M%S_%N).sh"
 env | sed 's/^/export /' > $env_vars
 
-# Ensure you have 'export VLFM_PYTHON=<PATH_TO_PYTHON>' in your .bashrc, where
-# <PATH_TO_PYTHON> is the path to the python executable for your conda env
-# (e.g., PATH_TO_PYTHON=`conda activate <env_name> && which python`)
-
-export VLFM_PYTHON=${VLFM_PYTHON:-`which python`}
 export COBRA_PORT=${COBRA_PORT:-12185}
 
 export tm=${tm:-"tmux"}
