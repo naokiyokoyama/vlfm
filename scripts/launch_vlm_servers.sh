@@ -16,7 +16,7 @@ export VLFM_PYTHON=${VLFM_PYTHON:-`which python`}
 export MOBILE_SAM_CHECKPOINT=${MOBILE_SAM_CHECKPOINT:-data/mobile_sam.pt}
 export OWLV2_PORT=${OWLV2_PORT:-12181}
 export SAM_PORT=${SAM_PORT:-12183}
-export YOLOV7_PORT=${YOLOV7_PORT:-12184}
+export YOLO_PORT=${YOLO_PORT:-12184}
 
 export tm=${tm:-"tmux"}
 export session_name=${VLM_SESSION_NAME:-vlm_servers_${RANDOM}}
@@ -38,7 +38,7 @@ $tm split-window -v -t ${session_name}:0
 
 # Run commands in each pane
 $tm send-keys -t ${session_name}:0.0 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.sam --port ${SAM_PORT}" C-m
-$tm send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.yolov7 --port ${YOLOV7_PORT}" C-m
+$tm send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.yolov9 --port ${YOLO_PORT}" C-m
 if $has_o; then
     $tm split-window -v -t ${session_name}:0.1
     $tm send-keys -t ${session_name}:0.2 "cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.owlv2 --port ${OWLV2_PORT}" C-m

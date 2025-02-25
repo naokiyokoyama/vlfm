@@ -21,7 +21,7 @@ from vlfm.vlm.detections import ObjectDetections
 from vlfm.vlm.owlv2 import OWLv2Client
 from vlfm.vlm.sam import MobileSAMClient
 from vlfm.vlm.server_wrapper import wait_for_server
-from vlfm.vlm.yolov7 import YOLOv7Client
+from vlfm.vlm.yolov9 import YOLOv9Client
 
 try:
     from habitat_baselines.common.tensor_dict import TensorDict
@@ -71,8 +71,8 @@ class BaseObjectNavPolicy(BasePolicy):
             wait_for_server(self._object_detector.url + "/health", timeout=500)
         else:
             self._object_detector: Optional[OWLv2Client] = None
-        self._coco_object_detector: YOLOv7Client = YOLOv7Client(
-            port=int(os.environ.get("YOLOV7_PORT", "12184"))
+        self._coco_object_detector: YOLOv9Client = YOLOv9Client(
+            port=int(os.environ.get("YOLO_PORT", "12184"))
         )
         wait_for_server(self._coco_object_detector.url + "/health", timeout=500)
         self._mobile_sam: MobileSAMClient = MobileSAMClient(
