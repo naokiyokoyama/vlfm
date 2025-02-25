@@ -14,6 +14,7 @@ from vlfm.policy.utils.acyclic_enforcer import AcyclicEnforcer
 from vlfm.utils.geometry_utils import closest_point_within_threshold
 from vlfm.vlm.blip2itm import BLIP2ITMClient
 from vlfm.vlm.detections import ObjectDetections
+from vlfm.vlm.server_wrapper import wait_for_server
 
 try:
     from habitat_baselines.common.tensor_dict import TensorDict
@@ -46,6 +47,7 @@ class BaseITMPolicy(BaseObjectNavPolicy):
     ):
         super().__init__(*args, **kwargs)
         self._itm = BLIP2ITMClient(port=int(os.environ.get("BLIP2ITM_PORT", "12182")))
+        wait_for_server(self._itm.url + "/health", timeout=500)
         self._text_prompt = text_prompt
         self._value_map: ValueMap = ValueMap(
             value_channels=len(text_prompt.split(PROMPT_SEPARATOR)),
@@ -89,7 +91,9 @@ class BaseITMPolicy(BaseObjectNavPolicy):
             Tuple[np.ndarray, float]: The best frontier and its value.
         """
         # The points and values will be sorted in descending order
-        sorted_pts, sorted_values = self._sort_frontiers_by_value(observations, frontiers)
+        sorted_pts, sorted_values = self._sort_frontiers_by_value(
+            observations, frontiers
+        )
         robot_xy = self._observations_cache["robot_xy"]
         best_frontier_idx = None
         top_two_values = tuple(sorted_values[:2])
@@ -108,7 +112,9 @@ class BaseITMPolicy(BaseObjectNavPolicy):
                     break
 
             if curr_index is None:
-                closest_index = closest_point_within_threshold(sorted_pts, self._last_frontier, threshold=0.5)
+                closest_index = closest_point_within_threshold(
+                    sorted_pts, self._last_frontier, threshold=0.5
+                )
 
                 if closest_index != -1:
                     # There is a point close to the last point pursued
@@ -127,7 +133,9 @@ class BaseITMPolicy(BaseObjectNavPolicy):
         # it is not cyclic.
         if best_frontier_idx is None:
             for idx, frontier in enumerate(sorted_pts):
-                cyclic = self._acyclic_enforcer.check_cyclic(robot_xy, frontier, top_two_values)
+                cyclic = self._acyclic_enforcer.check_cyclic(
+                    robot_xy, frontier, top_two_values
+                )
                 if cyclic:
                     print("Suppressed cyclic frontier.")
                     continue
@@ -203,7 +211,9 @@ class BaseITMPolicy(BaseObjectNavPolicy):
         for cosine, (rgb, depth, tf, min_depth, max_depth, fov) in zip(
             cosines, self._observations_cache["value_map_rgbd"]
         ):
-            self._value_map.update_map(np.array(cosine), depth, tf, min_depth, max_depth, fov)
+            self._value_map.update_map(
+                np.array(cosine), depth, tf, min_depth, max_depth, fov
+            )
 
         self._value_map.update_agent_traj(
             self._observations_cache["robot_xy"],
@@ -232,7 +242,9 @@ class ITMPolicy(BaseITMPolicy):
         self._pre_step(observations, masks)
         if self._visualize:
             self._update_value_map()
-        return super().act(observations, rnn_hidden_states, prev_actions, masks, deterministic)
+        return super().act(
+            observations, rnn_hidden_states, prev_actions, masks, deterministic
+        )
 
     def _reset(self) -> None:
         super()._reset()
@@ -258,7 +270,9 @@ class ITMPolicyV2(BaseITMPolicy):
     ) -> Any:
         self._pre_step(observations, masks)
         self._update_value_map()
-        return super().act(observations, rnn_hidden_states, prev_actions, masks, deterministic)
+        return super().act(
+            observations, rnn_hidden_states, prev_actions, masks, deterministic
+        )
 
     def _sort_frontiers_by_value(
         self, observations: "TensorDict", frontiers: np.ndarray
@@ -289,7 +303,9 @@ class ITMPolicyV3(ITMPolicyV2):
     def _sort_frontiers_by_value(
         self, observations: "TensorDict", frontiers: np.ndarray
     ) -> Tuple[np.ndarray, List[float]]:
-        sorted_frontiers, sorted_values = self._value_map.sort_waypoints(frontiers, 0.5, reduce_fn=self._reduce_values)
+        sorted_frontiers, sorted_values = self._value_map.sort_waypoints(
+            frontiers, 0.5, reduce_fn=self._reduce_values
+        )
 
         return sorted_frontiers, sorted_values
 

@@ -18,6 +18,7 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import DictConfig
 from torch import Tensor
 
+from vlfm.policy.cobra_tour_sensor import StringArrayConverter
 from vlfm.utils.geometry_utils import xyz_yaw_to_tf_matrix
 from vlfm.vlm.grounding_dino import ObjectDetections
 
@@ -92,7 +93,9 @@ class HabitatMixin:
         self._dataset_type = dataset_type
 
     @classmethod
-    def from_config(cls, config: DictConfig, *args_unused: Any, **kwargs_unused: Any) -> "HabitatMixin":
+    def from_config(
+        cls, config: DictConfig, *args_unused: Any, **kwargs_unused: Any
+    ) -> "HabitatMixin":
         policy_config: VLFMPolicyConfig = config.habitat_baselines.rl.policy
         kwargs = {k: policy_config[k] for k in VLFMPolicyConfig.kwaarg_names}  # type: ignore
 
@@ -109,10 +112,14 @@ class HabitatMixin:
         # Only bother visualizing if we're actually going to save the video
         kwargs["visualize"] = len(config.habitat_baselines.eval.video_option) > 0
 
-        if "hm3d" in config.habitat.dataset.data_path:
-            kwargs["dataset_type"] = "hm3d"
+        if "ovon" in config.habitat.dataset.data_path:
+            kwargs["dataset_type"] = "ovon"
+            kwargs["use_ov_detector"] = True
         elif "mp3d" in config.habitat.dataset.data_path:
             kwargs["dataset_type"] = "mp3d"
+            kwargs["use_ov_detector "] = True
+        elif "hm3d" in config.habitat.dataset.data_path:
+            kwargs["dataset_type"] = "hm3d"
         else:
             raise ValueError("Dataset type could not be inferred from habitat config")
 
@@ -127,18 +134,22 @@ class HabitatMixin:
         deterministic: bool = False,
     ) -> PolicyActionData:
         """Converts object ID to string name, returns action as PolicyActionData"""
-        object_id: int = observations[ObjectGoalSensor.cls_uuid][0].item()
         obs_dict = observations.to_tree()
-        if self._dataset_type == "hm3d":
-            obs_dict[ObjectGoalSensor.cls_uuid] = HM3D_ID_TO_NAME[object_id]
-        elif self._dataset_type == "mp3d":
-            obs_dict[ObjectGoalSensor.cls_uuid] = MP3D_ID_TO_NAME[object_id]
-            self._non_coco_caption = " . ".join(MP3D_ID_TO_NAME).replace("|", " . ") + " ."
+        if self._dataset_type in ["hm3d", "mp3d"]:
+            object_id: int = observations[ObjectGoalSensor.cls_uuid][0].item()
+            d = HM3D_ID_TO_NAME if self._dataset_type == "hm3d" else MP3D_ID_TO_NAME
+            obs_dict[ObjectGoalSensor.cls_uuid] = d[object_id]
+        elif self._dataset_type == "ovon":
+            obs_dict[ObjectGoalSensor.cls_uuid] = StringArrayConverter(
+                max_length=80
+            ).array_to_string(observations[ObjectGoalSensor.cls_uuid][0].cpu().numpy())
         else:
             raise ValueError(f"Dataset type {self._dataset_type} not recognized")
         parent_cls: BaseObjectNavPolicy = super()  # type: ignore
         try:
-            action, rnn_hidden_states = parent_cls.act(obs_dict, rnn_hidden_states, prev_actions, masks, deterministic)
+            action, rnn_hidden_states = parent_cls.act(
+                obs_dict, rnn_hidden_states, prev_actions, masks, deterministic
+            )
         except StopIteration:
             action = self._stop_action
         return PolicyActionData(
@@ -170,7 +181,9 @@ class HabitatMixin:
         info["start_yaw"] = self._start_yaw
         return info
 
-    def _cache_observations(self: Union["HabitatMixin", BaseObjectNavPolicy], observations: TensorDict) -> None:
+    def _cache_observations(
+        self: Union["HabitatMixin", BaseObjectNavPolicy], observations: TensorDict
+    ) -> None:
         """Caches the rgb, depth, and camera transform from the observations.
 
         Args:

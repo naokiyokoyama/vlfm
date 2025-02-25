@@ -2,7 +2,7 @@
 
 import os
 from dataclasses import dataclass, fields
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -17,7 +17,8 @@ from vlfm.policy.utils.pointnav_policy import WrappedPointNavResNetPolicy
 from vlfm.utils.geometry_utils import get_fov, rho_theta
 from vlfm.vlm.blip2 import BLIP2Client
 from vlfm.vlm.coco_classes import COCO_CLASSES
-from vlfm.vlm.grounding_dino import GroundingDINOClient, ObjectDetections
+from vlfm.vlm.detections import ObjectDetections
+from vlfm.vlm.owlv2 import OWLv2Client
 from vlfm.vlm.sam import MobileSAMClient
 from vlfm.vlm.server_wrapper import wait_for_server
 from vlfm.vlm.yolov7 import YOLOv7Client
@@ -49,8 +50,8 @@ class BaseObjectNavPolicy(BasePolicy):
         object_map_erosion_size: float,
         visualize: bool = True,
         compute_frontiers: bool = True,
-        min_obstacle_height: float = 0.15,
-        max_obstacle_height: float = 0.88,
+        min_obstacle_height: float = 0.9,
+        max_obstacle_height: float = 1.2,
         agent_radius: float = 0.18,
         obstacle_map_area_threshold: float = 1.5,
         hole_area_thresh: int = 100000,
@@ -58,44 +59,52 @@ class BaseObjectNavPolicy(BasePolicy):
         vqa_prompt: str = "Is this ",
         coco_threshold: float = 0.8,
         non_coco_threshold: float = 0.4,
+        use_ov_detector: bool = False,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         super().__init__()
-        self._object_detector = GroundingDINOClient(
-            port=int(os.environ.get("GROUNDING_DINO_PORT", "12181"))
-        )
-        self._coco_object_detector = YOLOv7Client(
+        if use_ov_detector:
+            self._object_detector: Optional[OWLv2Client] = OWLv2Client(
+                port=int(os.environ.get("OWLV2_PORT", "12181"))
+            )
+            wait_for_server(self._object_detector.url + "/health", timeout=500)
+        else:
+            self._object_detector: Optional[OWLv2Client] = None
+        self._coco_object_detector: YOLOv7Client = YOLOv7Client(
             port=int(os.environ.get("YOLOV7_PORT", "12184"))
         )
-        self._mobile_sam = MobileSAMClient(
+        wait_for_server(self._coco_object_detector.url + "/health", timeout=500)
+        self._mobile_sam: MobileSAMClient = MobileSAMClient(
             port=int(os.environ.get("SAM_PORT", "12183"))
         )
-        wait_for_server(self._object_detector.url + "/health", timeout=500)
-        wait_for_server(self._coco_object_detector.url + "/health", timeout=500)
         wait_for_server(self._mobile_sam.url + "/health", timeout=500)
-        self._use_vqa = use_vqa
+        self._use_vqa: bool = use_vqa
         if use_vqa:
-            self._vqa = BLIP2Client(port=int(os.environ.get("BLIP2_PORT", "12185")))
-        self._pointnav_policy = WrappedPointNavResNetPolicy(pointnav_policy_path)
+            self._vqa: BLIP2Client = BLIP2Client(
+                port=int(os.environ.get("BLIP2_PORT", "12185"))
+            )
+        self._pointnav_policy: WrappedPointNavResNetPolicy = (
+            WrappedPointNavResNetPolicy(pointnav_policy_path)
+        )
         self._object_map: ObjectPointCloudMap = ObjectPointCloudMap(
             erosion_size=object_map_erosion_size
         )
         self._depth_image_shape = tuple(depth_image_shape)
-        self._pointnav_stop_radius = pointnav_stop_radius
-        self._visualize = visualize
-        self._vqa_prompt = vqa_prompt
-        self._coco_threshold = coco_threshold
-        self._non_coco_threshold = non_coco_threshold
+        self._pointnav_stop_radius: float = pointnav_stop_radius
+        self._visualize: bool = visualize
+        self._vqa_prompt: str = vqa_prompt
+        self._coco_threshold: float = coco_threshold
+        self._non_coco_threshold: float = non_coco_threshold
 
-        self._num_steps = 0
-        self._did_reset = False
-        self._last_goal = np.zeros(2)
-        self._done_initializing = False
-        self._called_stop = False
-        self._compute_frontiers = compute_frontiers
+        self._num_steps: int = 0
+        self._did_reset: bool = False
+        self._last_goal: np.ndarray = np.zeros(2)
+        self._done_initializing: bool = False
+        self._called_stop: bool = False
+        self._compute_frontiers: bool = compute_frontiers
         if compute_frontiers:
-            self._obstacle_map = ObstacleMap(
+            self._obstacle_map: ObstacleMap = ObstacleMap(
                 min_height=min_obstacle_height,
                 max_height=max_obstacle_height,
                 area_thresh=obstacle_map_area_threshold,
@@ -250,7 +259,7 @@ class BaseObjectNavPolicy(BasePolicy):
         detections = (
             self._coco_object_detector.predict(img)
             if has_coco
-            else self._object_detector.predict(img, caption=self._non_coco_caption)
+            else self._object_detector.predict(img, classes=target_classes)
         )
         detections.filter_by_class(target_classes)
         det_conf_threshold = (
@@ -258,10 +267,15 @@ class BaseObjectNavPolicy(BasePolicy):
         )
         detections.filter_by_conf(det_conf_threshold)
 
-        if has_coco and has_non_coco and detections.num_detections == 0:
+        if (
+            self._object_detector is not None
+            and has_coco
+            and has_non_coco
+            and detections.num_detections == 0
+        ):
             # Retry with non-coco object detector
             detections = self._object_detector.predict(
-                img, caption=self._non_coco_caption
+                img, classes=self._non_coco_caption
             )
             detections.filter_by_class(target_classes)
             detections.filter_by_conf(self._non_coco_threshold)
@@ -420,14 +434,15 @@ class VLFMConfig:
     object_map_erosion_size: int = 5
     exploration_thresh: float = 0.0
     obstacle_map_area_threshold: float = 1.5  # in square meters
-    min_obstacle_height: float = 0.61
-    max_obstacle_height: float = 0.88
+    min_obstacle_height: float = 0.9
+    max_obstacle_height: float = 1.2
     hole_area_thresh: int = 100000
     use_vqa: bool = False
     vqa_prompt: str = "Is this "
     coco_threshold: float = 0.8
     non_coco_threshold: float = 0.4
     agent_radius: float = 0.18
+    use_ov_detector: bool = False
 
     @classmethod  # type: ignore
     @property

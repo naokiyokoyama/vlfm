@@ -1,7 +1,6 @@
 # Copyright (c) 2023 Boston Dynamics AI Institute LLC. All rights reserved.
 
 import os
-import time
 
 # The following imports require habitat to be installed, and despite not being used by
 # this script itself, will register several classes and make them discoverable by Hydra.
@@ -11,12 +10,14 @@ import time
 # used to suppress the unused import and unsorted import warnings by ruff.
 import frontier_exploration  # noqa
 import hydra  # noqa
+import ovon  # noqa: F401
 from habitat import get_config  # noqa
-from habitat.config import read_write
 from habitat.config.default import patch_config
 from habitat.config.default_structured_configs import register_hydra_plugin
+from habitat_baselines.config.default_structured_configs import HabitatBaselinesRLConfig
 from habitat_baselines.run import execute_exp
 from hydra.core.config_search_path import ConfigSearchPath
+from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
 from omegaconf import DictConfig
 
@@ -26,7 +27,15 @@ import vlfm.policy.action_replay_policy  # noqa: F401
 import vlfm.policy.cobra_policy  # noqa: F401
 import vlfm.policy.cobra_tour_sensor  # noqa: F401
 import vlfm.policy.habitat_policies  # noqa: F401
+import vlfm.policy.open_vocab_goal_sensor  # noqa: F401
 import vlfm.utils.vlfm_trainer  # noqa: F401
+
+cs = ConfigStore.instance()
+cs.store(
+    group="habitat_baselines",
+    name="habitat_baselines_rl_config_base",
+    node=HabitatBaselinesRLConfig(),
+)
 
 
 class HabitatConfigPlugin(SearchPathPlugin):
@@ -50,16 +59,9 @@ def main(cfg: DictConfig) -> None:
         exit(1)
 
     cfg = patch_config(cfg)
-    with read_write(cfg):
-        try:
-            cfg.habitat.simulator.agents.main_agent.sim_sensors.pop("semantic_sensor")
-        except KeyError:
-            pass
 
-    if cfg.habitat_baselines.rl.policy.name != "HabitatCobraPolicy":
-        time.sleep(90)
-
-    execute_exp(cfg, "eval" if cfg.habitat_baselines.evaluate else "train")
+    assert cfg.habitat_baselines.evaluate, "Only evaluation is supported."
+    execute_exp(cfg, "eval")
 
 
 if __name__ == "__main__":

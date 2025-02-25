@@ -5,16 +5,17 @@
 defaults:
   - /habitat_baselines: habitat_baselines_rl_config_base
   - /benchmark/nav/objectnav: objectnav_hm3d
-  - /habitat/task/lab_sensors:
+  - /habitat/task/measurements:
+    - frontier_exploration_map
+    - traveled_stairs
+  - /habitat_baselines/rl/policy: vlfm_policy
+  - override /habitat/task/lab_sensors:
       - base_explorer
       - compass_sensor
       - gps_sensor
       - heading_sensor
       - frontier_sensor
-  - /habitat/task/measurements:
-    - frontier_exploration_map
-    - traveled_stairs
-  - /habitat_baselines/rl/policy: vlfm_policy
+      - open_vocab_goal_sensor
   - _self_
 
 habitat:
@@ -27,6 +28,54 @@ habitat:
     lab_sensors:
       base_explorer:
         turn_angle: 30
+    measurements:
+      distance_to_goal:
+        type: OVONDistanceToGoal
+        distance_to: VIEW_POINTS
+  dataset:
+    type: OVON-v1
+  simulator:
+    type: OVONSim-v0
+#    agents:
+#      main_agent:
+#        height: 1.41
+#        radius: 0.17
+#        sim_sensors:
+#          rgb_sensor:
+#            type: HabitatSimRGBSensor
+#            height: 640
+#            width: 360
+#            position:
+#              - 0.0
+#              - 1.31
+#              - 0.0
+#            orientation:
+#              - 0.0
+#              - 0.0
+#              - 0.0
+#            hfov: 42
+#            sensor_subtype: PINHOLE
+#            noise_model: None
+#            noise_model_kwargs: { }
+#          depth_sensor:
+#            type: HabitatSimDepthSensor
+#            height: 640
+#            width: 360
+#            position:
+#              - 0.0
+#              - 1.31
+#              - 0.0
+#            orientation:
+#              - 0.0
+#              - 0.0
+#              - 0.0
+#            hfov: 42
+#            sensor_subtype: PINHOLE
+#            noise_model: None
+#            noise_model_kwargs: { }
+#            min_depth: 0.5
+#            max_depth: 5.0
+#            normalize_depth: true
 
 habitat_baselines:
   evaluate: True
