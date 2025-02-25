@@ -7,13 +7,13 @@ from vlfm.vlm.detections import ObjectDetections
 from .server_wrapper import ServerMixin, host_model, send_request, str_to_image
 
 
-class YOLOv9:
+class YOLO:
     def __init__(self):
         """Loads the model and saves it to a field."""
         self.device = (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
-        self.model = ultralytics.YOLO("data/yolov9e.pt").to(self.device)
+        self.model = ultralytics.YOLO("data/yolo11x.pt").to(self.device)
 
     def predict(self, image: np.ndarray) -> ObjectDetections:
         """
@@ -36,9 +36,9 @@ class YOLOv9:
         return detections
 
 
-class YOLOv9Client:
+class YOLOClient:
     def __init__(self, port: int = 12184):
-        self.url = f"http://localhost:{port}/yolov9"
+        self.url = f"http://localhost:{port}/yolo"
 
     def predict(self, image_numpy: np.ndarray) -> ObjectDetections:
         response = send_request(self.url, image=image_numpy)
@@ -118,23 +118,23 @@ if __name__ == "__main__":
         # Load the model
         import cv2
 
-        yolov9 = YOLOv9()
+        yolo = YOLO()
         print("Model loaded!")
         print("Testing model...")
         img_path = "data/bus.jpg"
         img = cv2.imread(img_path)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        od = yolov9.predict(img_rgb)
+        od = yolo.predict(img_rgb)
         ann_img = od.annotated_frame
         cv2.imwrite("annotated_frame.jpg", cv2.cvtColor(ann_img, cv2.COLOR_RGB2BGR))
         quit()
 
-    class YOLOv9Server(ServerMixin, YOLOv9):
+    class YOLOServer(ServerMixin, YOLO):
         def process_payload(self, payload: dict) -> dict:
             image = str_to_image(payload["image"])
             return self.predict(image).to_json()
 
-    yolov9 = YOLOv9Server()
+    yolo = YOLOServer()
     print("Model loaded!")
     print(f"Hosting on port {args.port}...")
-    host_model(yolov9, name="yolov9", port=args.port)
+    host_model(yolo, name="yolo", port=args.port)

@@ -38,7 +38,7 @@ $tm split-window -v -t ${session_name}:0
 
 # Run commands in each pane
 $tm send-keys -t ${session_name}:0.0 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.sam --port ${SAM_PORT}" C-m
-$tm send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.yolov9 --port ${YOLO_PORT}" C-m
+$tm send-keys -t ${session_name}:0.1 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.yolo --port ${YOLO_PORT}" C-m
 if $has_o; then
     $tm split-window -v -t ${session_name}:0.1
     $tm send-keys -t ${session_name}:0.2 "cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.owlv2 --port ${OWLV2_PORT}" C-m
