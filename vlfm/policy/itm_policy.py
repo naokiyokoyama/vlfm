@@ -8,6 +8,8 @@ import numpy as np
 from torch import Tensor
 
 from vlfm.mapping.frontier_map import FrontierMap
+from vlfm.mapping.obstacle_map import ObstacleMap as ObstacleMap
+from vlfm.mapping.obstacle_map_v2 import ObstacleMapV2
 from vlfm.mapping.value_map import ValueMap
 from vlfm.policy.base_objectnav_policy import BaseObjectNavPolicy
 from vlfm.policy.utils.acyclic_enforcer import AcyclicEnforcer
@@ -32,6 +34,7 @@ class BaseITMPolicy(BaseObjectNavPolicy):
     _circle_marker_radius: int = 5
     _last_value: float = float("-inf")
     _last_frontier: np.ndarray = np.zeros(2)
+    _obstacle_map_cls: Union[ObstacleMap, ObstacleMapV2] = ObstacleMap
 
     @staticmethod
     def _vis_reduce_fn(i: np.ndarray) -> np.ndarray:

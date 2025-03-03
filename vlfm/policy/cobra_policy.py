@@ -11,7 +11,8 @@ import torch
 from habitat_baselines.common.baseline_registry import baseline_registry
 from torch import Tensor
 
-from vlfm.mapping.obstacle_map_v2 import FrontierRGBWaypoint
+from vlfm.mapping.obstacle_map import ObstacleMap
+from vlfm.mapping.obstacle_map_v2 import FrontierRGBWaypoint, ObstacleMapV2
 from vlfm.policy.base_objectnav_policy import BaseObjectNavPolicy
 from vlfm.policy.cobra_tour_sensor import StringArrayConverter
 from vlfm.policy.habitat_policies import HabitatMixin, TorchActionIDs
@@ -21,6 +22,8 @@ warnings.filterwarnings("ignore")
 
 
 class CobraPolicy(BaseObjectNavPolicy):
+    _obstacle_map_cls: Union[ObstacleMap, ObstacleMapV2] = ObstacleMapV2
+
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self._first_transmission: bool = True

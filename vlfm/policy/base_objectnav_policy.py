@@ -11,7 +11,8 @@ from hydra.core.config_store import ConfigStore
 from torch import Tensor
 
 from vlfm.mapping.object_point_cloud_map import ObjectPointCloudMap
-from vlfm.mapping.obstacle_map_v2 import ObstacleMapV2 as ObstacleMap
+from vlfm.mapping.obstacle_map import ObstacleMap
+from vlfm.mapping.obstacle_map_v2 import ObstacleMapV2
 from vlfm.obs_transformers.utils import image_resize
 from vlfm.policy.utils.pointnav_policy import WrappedPointNavResNetPolicy
 from vlfm.utils.geometry_utils import get_fov, rho_theta
@@ -41,6 +42,7 @@ class BaseObjectNavPolicy(BasePolicy):
     _observations_cache: Dict[str, Any] = {}
     _non_coco_caption = ""
     _load_yolo: bool = True
+    _obstacle_map_cls: Optional[Union[ObstacleMap, ObstacleMapV2]] = None
 
     def __init__(
         self,
@@ -104,12 +106,14 @@ class BaseObjectNavPolicy(BasePolicy):
         self._called_stop: bool = False
         self._compute_frontiers: bool = compute_frontiers
         if compute_frontiers:
-            self._obstacle_map: ObstacleMap = ObstacleMap(
-                min_height=min_obstacle_height,
-                max_height=max_obstacle_height,
-                area_thresh=obstacle_map_area_threshold,
-                agent_radius=agent_radius,
-                hole_area_thresh=hole_area_thresh,
+            self._obstacle_map: Union[ObstacleMap, ObstacleMapV2] = (
+                self._obstacle_map_cls(
+                    min_height=min_obstacle_height,
+                    max_height=max_obstacle_height,
+                    area_thresh=obstacle_map_area_threshold,
+                    agent_radius=agent_radius,
+                    hole_area_thresh=hole_area_thresh,
+                )
             )
 
     def _reset(self) -> None:
@@ -254,7 +258,6 @@ class BaseObjectNavPolicy(BasePolicy):
     def _get_object_detections(self, img: np.ndarray) -> ObjectDetections:
         target_classes = self._target_object.split("|")
         has_coco = any(c in COCO_CLASSES for c in target_classes) and self._load_yolo
-        has_non_coco = any(c not in COCO_CLASSES for c in target_classes)
 
         detections = (
             self._coco_object_detector.predict(img)
@@ -270,13 +273,11 @@ class BaseObjectNavPolicy(BasePolicy):
         if (
             self._object_detector is not None
             and has_coco
-            and has_non_coco
             and detections.num_detections == 0
         ):
             # Retry with non-coco object detector
-            detections = self._object_detector.predict(
-                img, classes=self._non_coco_caption
-            )
+            target_classes = self.coco2ov(target_classes)
+            detections = self._object_detector.predict(img, classes=target_classes)
             detections.filter_by_class(target_classes)
             detections.filter_by_conf(self._non_coco_threshold)
 
@@ -420,6 +421,9 @@ class BaseObjectNavPolicy(BasePolicy):
         Returns:
             np.ndarray: The inferred depth image.
         """
+        raise NotImplementedError
+
+    def coco2ov(self, classes: List[str]) -> List[str]:
         raise NotImplementedError
 
 

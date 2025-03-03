@@ -1,7 +1,7 @@
 # Copyright (c) 2023 Boston Dynamics AI Institute LLC. All rights reserved.
 
 from dataclasses import dataclass
-from typing import Any, Dict, Union
+from typing import Any, Dict, List, Union
 
 import numpy as np
 import torch
@@ -18,11 +18,11 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import DictConfig
 from torch import Tensor
 
-from vlfm.policy.cobra_tour_sensor import StringArrayConverter
-from vlfm.utils.geometry_utils import xyz_yaw_to_tf_matrix
-from vlfm.vlm.grounding_dino import ObjectDetections
-
 from ..mapping.obstacle_map import ObstacleMap
+from ..mapping.obstacle_map_v2 import ObstacleMapV2
+from ..policy.cobra_tour_sensor import StringArrayConverter
+from ..utils.geometry_utils import xyz_yaw_to_tf_matrix
+from ..vlm.detections import ObjectDetections
 from .base_objectnav_policy import BaseObjectNavPolicy, VLFMConfig
 from .itm_policy import ITMPolicy, ITMPolicyV2, ITMPolicyV3
 
@@ -117,7 +117,7 @@ class HabitatMixin:
             kwargs["use_ov_detector"] = True
         elif "mp3d" in config.habitat.dataset.data_path:
             kwargs["dataset_type"] = "mp3d"
-            kwargs["use_ov_detector "] = True
+            kwargs["use_ov_detector"] = True
         elif "hm3d" in config.habitat.dataset.data_path:
             kwargs["dataset_type"] = "hm3d"
         else:
@@ -203,15 +203,16 @@ class HabitatMixin:
 
         self._obstacle_map: ObstacleMap
         if self._compute_frontiers:
+            kwargs = {"rgb": rgb} if self._obstacle_map_cls is ObstacleMapV2 else {}
             self._obstacle_map.update_map(
-                rgb,
-                depth,
-                tf_camera_to_episodic,
-                self._min_depth,
-                self._max_depth,
-                self._fx,
-                self._fy,
-                self._camera_fov,
+                depth=depth,
+                tf_camera_to_episodic=tf_camera_to_episodic,
+                min_depth=self._min_depth,
+                max_depth=self._max_depth,
+                fx=self._fx,
+                fy=self._fy,
+                topdown_fov=self._camera_fov,
+                **kwargs,
             )
             frontiers = self._obstacle_map.frontiers
             self._obstacle_map.update_agent_traj(robot_xy, camera_yaw)
@@ -249,6 +250,18 @@ class HabitatMixin:
             ],
             "habitat_start_yaw": observations["heading"][0].item(),
         }
+
+    def coco2ov(self, classes: List[str]) -> List[str]:
+        result = []
+        for c in classes:
+            if c == "potted plant":
+                result.append("plant")
+            elif self._dataset_type == "hm3d" and c == "tv":
+                result.append("television")
+                result.append("computer monitor")
+            else:
+                result.append(c)
+        return result
 
 
 @baseline_registry.register_policy
