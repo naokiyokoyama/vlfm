@@ -43,14 +43,17 @@ def is_evaluated(
 
     if not ignore_stale:
         # Delete any empty files that are older than 3 minutes
-        for f in os.listdir(log_dir):
-            try:
-                if os.path.getsize(os.path.join(log_dir, f)) == 0 and (
-                    time.time() - os.path.getmtime(os.path.join(log_dir, f)) > 3 * 60
-                ):
-                    os.remove(os.path.join(log_dir, f))
-            except Exception:
-                pass
+        try:
+            for f in os.listdir(log_dir):
+                try:
+                    if os.path.getsize(os.path.join(log_dir, f)) == 0 and (
+                        time.time() - os.path.getmtime(os.path.join(log_dir, f)) > 3 * 60
+                    ):
+                        os.remove(os.path.join(log_dir, f))
+                except:
+                    pass
+        except:
+            pass
 
     if assert_complete:
         if not os.path.exists(filename):
