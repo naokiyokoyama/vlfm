@@ -61,7 +61,7 @@ class BaseObjectNavPolicy(BasePolicy):
         vqa_prompt: str = "Is this ",
         coco_threshold: float = 0.8,
         non_coco_threshold: float = 0.4,
-        use_ov_detector: bool = False,
+        use_ov_detector: bool = True,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -446,7 +446,7 @@ class VLFMConfig:
     coco_threshold: float = 0.8
     non_coco_threshold: float = 0.4
     agent_radius: float = 0.18
-    use_ov_detector: bool = False
+    use_ov_detector: bool = True
 
     @classmethod  # type: ignore
     @property
