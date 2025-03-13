@@ -32,7 +32,9 @@ class DirectoryCache:
             hash_input.append(f"{file}:{os.path.getmtime(file)}")
         return hashlib.md5("".join(hash_input).encode()).hexdigest()
 
-    def get_cached_results(self, directory: str) -> Tuple[int, int, float, float]:
+    def get_cached_results(
+        self, directory: str
+    ) -> Tuple[int, int, float, float, float]:
         dir_hash = self.get_directory_hash(directory)
         if directory in self.cache:
             cached_hash, results = self.cache[directory]
@@ -40,7 +42,9 @@ class DirectoryCache:
                 return results
         return None
 
-    def cache_results(self, directory: str, results: Tuple[int, int, float, float]):
+    def cache_results(
+        self, directory: str, results: Tuple[int, int, float, float, float]
+    ):
         dir_hash = self.get_directory_hash(directory)
         self.cache[directory] = (dir_hash, results)
         self.save_cache()
@@ -48,7 +52,7 @@ class DirectoryCache:
 
 def analyze_json_files(
     directory: str, cache: DirectoryCache
-) -> Tuple[int, int, float, float]:
+) -> Tuple[int, int, float, float, float]:
     # Check cache first
     cached_results = cache.get_cached_results(directory)
     if cached_results is not None:
@@ -60,6 +64,7 @@ def analyze_json_files(
     failed = 0
     total_success = 0
     total_spl = 0
+    total_soft_spl = 0
 
     for file in json_files:
         try:
@@ -69,6 +74,7 @@ def analyze_json_files(
                     count += 1
                     total_success += float(data["success"])
                     total_spl += float(data["spl"])
+                    total_soft_spl += float(data["soft_spl"])
                 else:
                     failed += 1
         except (json.JSONDecodeError, ValueError, KeyError):
@@ -80,6 +86,7 @@ def analyze_json_files(
         failed,
         total_success / count if count > 0 else 0,
         total_spl / count if count > 0 else 0,
+        total_soft_spl / count if count > 0 else 0,
     )
 
     # Cache the results
@@ -108,7 +115,7 @@ def main():
         if os.path.exists(dir_path):
             subdirs = [subdir for subdir in os.scandir(dir_path) if subdir.is_dir()]
             for subdir in sorted(subdirs, key=lambda x: x.name):
-                count, failed, avg_success, avg_spl = analyze_json_files(
+                count, failed, avg_success, avg_spl, avg_soft_spl = analyze_json_files(
                     subdir.path, cache
                 )
                 grand_total_valid += count
@@ -124,14 +131,14 @@ def main():
             print("-" * (len(dir_path) + 11))
             subdirs = [subdir for subdir in os.scandir(dir_path) if subdir.is_dir()]
             for subdir in sorted(subdirs, key=lambda x: x.name):
-                count, failed, avg_success, avg_spl = analyze_json_files(
+                count, failed, avg_success, avg_spl, avg_soft_spl = analyze_json_files(
                     subdir.path, cache
                 )
                 if count > 0 or failed > 0:
                     print(
                         f"  {os.path.basename(subdir.path)}: {count} valid"
                         f", {failed} blank (avg success: {avg_success:.2f},"
-                        f" avg SPL: {avg_spl:.2f})"
+                        f" avg SPL: {avg_spl:.2f}, avg soft SPL: {avg_soft_spl:.2f})"
                     )
 
 
