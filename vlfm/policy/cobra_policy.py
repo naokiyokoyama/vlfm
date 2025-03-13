@@ -33,7 +33,7 @@ class CobraPolicy(BaseObjectNavPolicy):
         )
         self._prev_frontiers: Set[Tuple[int]] = set()
         self._blacklist: Set[Tuple[float, float, float]] = set()
-        self._cobra_port = os.environ.get("COBRA_PORT", "5000")
+        self._cobra_port = os.environ.get("COBRA_PORT", "12185")
         self._string_converter = StringArrayConverter(max_length=30)
         wait_for_server(f"http://127.0.0.1:{self._cobra_port}/health", timeout=1000)
 
