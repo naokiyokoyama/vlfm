@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-VLFM_DIR=~/implicit_memory_navigation/vlfm
+VLFM_DIR=/coc/testnvme/nyokoyama3/fall_2024/implicit_memory_navigation/vlfm
 VLFM_PYTHON=/coc/testnvme/nyokoyama3/miniconda3/envs/cobra_vlfm/bin/python
 
 # Save current environment variables to disk

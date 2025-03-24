@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-COBRA_DIR=~/implicit_memory_navigation/cobra
+COBRA_DIR=/coc/testnvme/nyokoyama3/fall_2024/implicit_memory_navigation/cobra
 COBRA_PYTHON=${COBRA_PYTHON:-/coc/testnvme/nyokoyama3/miniconda3/envs/cobra/bin/python}
 
 # Save current environment variables to disk

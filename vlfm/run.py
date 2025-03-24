@@ -20,6 +20,7 @@ from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
 from omegaconf import DictConfig
+from habitat.config import read_write
 
 import vlfm.measurements.traveled_stairs  # noqa: F401
 import vlfm.obs_transformers.resize  # noqa: F401
@@ -59,6 +60,12 @@ def main(cfg: DictConfig) -> None:
         exit(1)
 
     cfg = patch_config(cfg)
+
+    if "tour_sensor" in cfg.habitat.task.lab_sensors and "MAX_LENGTH" in os.environ:
+        with read_write(cfg):
+            cfg.habitat.task.lab_sensors.tour_sensor.max_tour_length = int(
+                os.environ["MAX_LENGTH"]
+            )
 
     assert cfg.habitat_baselines.evaluate, "Only evaluation is supported."
     execute_exp(cfg, "eval")

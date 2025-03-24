@@ -19,13 +19,24 @@ def log_episode(episode_id: Union[str, int], scene_id: str, data: Dict) -> None:
     filename = os.path.join(log_dir, base)
 
     # Skip if the filename already exists AND it isn't empty
-    if not (os.path.exists(filename) and os.path.getsize(filename) > 0):
+    if not (os.path.exists(filename) and is_json_completed(filename)):
         print(f"Logging episode {int(episode_id):04d} to {filename}")
         with open(filename, "w") as f:
             json.dump(
                 {"episode_id": episode_id, "scene_id": scene_id, **data}, f, indent=4
             )
 
+def is_json_completed(json_file: str) -> bool:
+    try:
+        if os.path.getsize(json_file) == 0:
+            return False
+        with open(json_file, 'r') as f:
+            content = f.read().strip()
+            if content == "" or content == "{}" or "spl" not in content:
+                return False
+    except:
+        return False
+    return True
 
 def is_evaluated(
     episode_id: Union[str, int],
