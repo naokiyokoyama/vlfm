@@ -6,7 +6,7 @@ from vlfm.vlm.detections import ObjectDetections
 from PIL import Image
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 
-from .server_wrapper import ServerMixin, host_model, send_request, str_to_image
+from .server_wrapper import ServerMixin, host_model, send_request, str_to_image, CUDALockMixin
 
 
 class OWLv2:
@@ -39,8 +39,7 @@ class OWLv2:
         pil_image = Image.fromarray(image)
         inputs = self.processor(text=[classes], images=pil_image, return_tensors="pt")
         inputs = inputs.to(self.device)
-        with torch.inference_mode():  # Using inference_mode like in YOLOv7
-            outputs = self.model(**inputs)
+        outputs = self.inference(**inputs)
 
         h, w = inputs.pixel_values.shape[-2:]
 
@@ -70,6 +69,9 @@ class OWLv2:
 
         return detections
 
+    def inference(self, *args, **kwargs):
+        with torch.inference_mode():
+            return self.model(*args, **kwargs)
 
 class OWLv2Client:
     def __init__(self, port: int = 12186):
@@ -91,7 +93,7 @@ if __name__ == "__main__":
 
     print("Loading model...")
 
-    class OWLv2Server(ServerMixin, OWLv2):
+    class OWLv2Server(CUDALockMixin, ServerMixin, OWLv2):
         def process_payload(self, payload: dict) -> dict:
             image = str_to_image(payload.pop("image"))
             return self.predict(image, **payload).to_json()

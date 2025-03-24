@@ -1,9 +1,9 @@
 # Copyright (c) 2023 Boston Dynamics AI Institute LLC. All rights reserved.
 
 import base64
+import contextlib
+import fcntl
 import os
-import random
-import socket
 import time
 from typing import Any, Dict
 
@@ -36,7 +36,7 @@ def host_model(model: Any, name: str, port: int = 5000) -> None:
     def health_check():
         return jsonify({"status": "healthy"}), 200
 
-    app.run(host="localhost", port=port)
+    app.run(host="0.0.0.0", port=port)
 
 
 def bool_arr_to_str(arr: np.ndarray) -> str:
@@ -73,99 +73,29 @@ def str_to_image(img_str: str) -> np.ndarray:
 
 
 def send_request(url: str, **kwargs: Any) -> dict:
-    response = {}
-    for attempt in range(10):
-        try:
-            response = _send_request(url, **kwargs)
-            break
-        except Exception as e:
-            if attempt == 9:
-                print(e)
-                exit()
-            else:
-                print(f"Error: {e}. Retrying in 20-30 seconds...")
-                time.sleep(20 + random.random() * 10)
-
-    return response
+    return _send_request(url, **kwargs)
 
 
 def _send_request(url: str, **kwargs: Any) -> dict:
-    lockfiles_dir = "lockfiles"
-    if not os.path.exists(lockfiles_dir):
-        os.makedirs(lockfiles_dir)
-    filename = url.replace("/", "_").replace(":", "_") + ".lock"
-    filename = filename.replace("localhost", socket.gethostname())
-    filename = os.path.join(lockfiles_dir, filename)
-    try:
-        while True:
-            # Use a while loop to wait until this filename does not exist
-            while os.path.exists(filename):
-                # If the file exists, wait 50ms and try again
-                time.sleep(0.05)
+    # Create a payload dict which is a clone of kwargs but all np.array values are
+    # converted to strings
+    payload = {}
+    for k, v in kwargs.items():
+        if isinstance(v, np.ndarray):
+            payload[k] = image_to_str(v, quality=kwargs.get("quality", 90))
+        else:
+            payload[k] = v
 
-                try:
-                    # If the file was last modified more than 120 seconds ago, delete it
-                    if time.time() - os.path.getmtime(filename) > 120:
-                        os.remove(filename)
-                except FileNotFoundError:
-                    pass
+    # Set the headers
+    headers = {"Content-Type": "application/json"}
 
-            rand_str = str(random.randint(0, 1000000))
+    resp = requests.post(url, headers=headers, json=payload, timeout=10)
+    if resp.status_code == 200:
+        return resp.json()
 
-            with open(filename, "w") as f:
-                f.write(rand_str)
-            time.sleep(0.05)
-            try:
-                with open(filename, "r") as f:
-                    if f.read() == rand_str:
-                        break
-            except FileNotFoundError:
-                pass
-
-        # Create a payload dict which is a clone of kwargs but all np.array values are
-        # converted to strings
-        payload = {}
-        for k, v in kwargs.items():
-            if isinstance(v, np.ndarray):
-                payload[k] = image_to_str(v, quality=kwargs.get("quality", 90))
-            else:
-                payload[k] = v
-
-        # Set the headers
-        headers = {"Content-Type": "application/json"}
-
-        start_time = time.time()
-        while True:
-            try:
-                resp = requests.post(url, headers=headers, json=payload, timeout=1)
-                if resp.status_code == 200:
-                    result = resp.json()
-                    break
-                else:
-                    raise Exception("Request failed")
-            except (
-                requests.exceptions.Timeout,
-                requests.exceptions.RequestException,
-            ) as e:
-                print(e)
-                if time.time() - start_time > 20:
-                    raise Exception("Request timed out after 20 seconds")
-
-        try:
-            # Delete the lock file
-            os.remove(filename)
-        except FileNotFoundError:
-            pass
-
-    except Exception as e:
-        try:
-            # Delete the lock file
-            os.remove(filename)
-        except FileNotFoundError:
-            pass
-        raise e
-
-    return result
+    raise requests.RequestException(
+        f"Request failed with status code {resp.status_code}"
+    )
 
 
 def wait_for_server(url, timeout=120, interval=1):
@@ -194,3 +124,63 @@ def wait_for_server(url, timeout=120, interval=1):
         )
     print(f"Server did not become ready within {timeout} seconds")
     return False
+
+
+@contextlib.contextmanager
+def cuda_lock(lock_file: str = "/tmp/cuda_lock.lock", timeout=60):
+    """
+    A context manager that acquires a lock before running CUDA operations.
+
+    Args:
+        lock_file: Path to the lock file
+        timeout: Maximum time to wait for the lock in seconds
+
+    Yields:
+        None
+
+    Raises:
+        TimeoutError: If the lock cannot be acquired within the timeout period
+    """
+    start_time = time.time()
+
+    # Create the lock file if it doesn't exist
+    if not os.path.exists(lock_file):
+        with open(lock_file, "w"):
+            pass
+
+    # Try to acquire the lock
+    lock_fd = open(lock_file, "r+")
+    while True:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except IOError:  # Another process has the lock
+            if time.time() - start_time > timeout:
+                lock_fd.close()
+                raise TimeoutError(
+                    f"Could not acquire CUDA lock within {timeout} seconds"
+                )
+            time.sleep(0.1)  # Wait a bit before retrying
+
+    try:
+        # Do CUDA operations with the lock held
+        yield
+    finally:
+        # Release the lock
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+
+
+class CUDALockMixin:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+    def inference(self, *args: Any, **kwargs: Any) -> Any:
+        import torch
+
+        prefix = os.environ.get("SLURM_JOBID", "0")
+        lock_file = f"/tmp/{prefix}_cuda_lock.lock"
+
+        torch.cuda.empty_cache()
+        with cuda_lock(lock_file=lock_file, timeout=10):
+            return super().inference(*args, **kwargs)
