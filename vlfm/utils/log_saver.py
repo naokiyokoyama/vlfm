@@ -1,5 +1,5 @@
 # Copyright (c) 2023 Boston Dynamics AI Institute LLC. All rights reserved.
-
+import glob
 import json
 import os
 import time
@@ -55,18 +55,13 @@ def is_evaluated(
         return False
 
     if not ignore_stale:
-        # Delete any empty files that are older than 3 minutes
-        try:
-            for f in os.listdir(log_dir):
-                try:
-                    if os.path.getsize(os.path.join(log_dir, f)) == 0 and (
-                        time.time() - os.path.getmtime(os.path.join(log_dir, f)) > 3 * 60
-                    ):
-                        os.remove(os.path.join(log_dir, f))
-                except:
-                    pass
-        except:
-            pass
+        # Delete any empty .json files that are older than 3 minutes
+        for f in glob.glob(os.path.join(log_dir, "*.json")):
+            try:
+                if os.path.getsize(f) == 0 and (time.time() - os.path.getmtime(f) > 60):
+                    os.remove(f)
+            except:
+                pass
 
     if assert_complete:
         if not os.path.exists(filename):
