@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import pickle
 from pathlib import Path
@@ -34,7 +35,7 @@ class DirectoryCache:
 
     def get_cached_results(
         self, directory: str
-    ) -> Tuple[int, int, float, float, float]:
+    ) -> Tuple[int, int, int, float, float, float]:
         dir_hash = self.get_directory_hash(directory)
         if directory in self.cache:
             cached_hash, results = self.cache[directory]
@@ -43,7 +44,7 @@ class DirectoryCache:
         return None
 
     def cache_results(
-        self, directory: str, results: Tuple[int, int, float, float, float]
+        self, directory: str, results: Tuple[int, int, int, float, float, float]
     ):
         dir_hash = self.get_directory_hash(directory)
         self.cache[directory] = (dir_hash, results)
@@ -52,7 +53,7 @@ class DirectoryCache:
 
 def analyze_json_files(
     directory: str, cache: DirectoryCache
-) -> Tuple[int, int, float, float, float]:
+) -> Tuple[int, int, int, float, float, float]:
     # Check cache first
     cached_results = cache.get_cached_results(directory)
     if cached_results is not None:
@@ -62,6 +63,7 @@ def analyze_json_files(
     json_files = list(Path(directory).glob("*.json"))
     count = 0
     failed = 0
+    nan_count = 0
     total_success = 0
     total_spl = 0
     total_soft_spl = 0
@@ -70,13 +72,37 @@ def analyze_json_files(
         try:
             with open(file) as f:
                 data = json.load(f)
-                if data and "success" in data and "spl" in data:
-                    count += 1
-                    total_success += float(data["success"])
-                    total_spl += float(data["spl"])
-                    total_soft_spl += float(data["soft_spl"])
-                else:
+                if not isinstance(data, dict):
                     failed += 1
+                    continue
+
+                if "spl" not in data:
+                    failed += 1
+                    continue
+
+                # Check if spl is NaN
+                try:
+                    spl_value = float(data["spl"])
+                    if math.isnan(spl_value):
+                        nan_count += 1
+                        continue
+                except (ValueError, TypeError):
+                    failed += 1
+                    continue
+
+                # If we get here, the file is valid
+                count += 1
+                if "success" in data:
+                    total_success += float(data["success"])
+                total_spl += spl_value
+                if "soft_spl" in data:
+                    try:
+                        soft_spl_value = float(data["soft_spl"])
+                        if not math.isnan(soft_spl_value):
+                            total_soft_spl += soft_spl_value
+                    except (ValueError, TypeError):
+                        pass
+
         except (json.JSONDecodeError, ValueError, KeyError):
             failed += 1
             continue
@@ -84,6 +110,7 @@ def analyze_json_files(
     results = (
         count,
         failed,
+        nan_count,
         total_success / count if count > 0 else 0,
         total_spl / count if count > 0 else 0,
         total_soft_spl / count if count > 0 else 0,
@@ -110,19 +137,22 @@ def main():
 
     grand_total_valid = 0
     grand_total_failed = 0
+    grand_total_nan = 0
 
     for dir_path in sorted(args.directories):
         if os.path.exists(dir_path):
             subdirs = [subdir for subdir in os.scandir(dir_path) if subdir.is_dir()]
             for subdir in sorted(subdirs, key=lambda x: x.name):
-                count, failed, avg_success, avg_spl, avg_soft_spl = analyze_json_files(
-                    subdir.path, cache
+                count, failed, nan_count, avg_success, avg_spl, avg_soft_spl = (
+                    analyze_json_files(subdir.path, cache)
                 )
                 grand_total_valid += count
                 grand_total_failed += failed
+                grand_total_nan += nan_count
 
     print(f"Total valid JSONs across all subdirectories: {grand_total_valid}")
     print(f"Total failed JSONs across all subdirectories: {grand_total_failed}")
+    print(f"Total NaN SPL JSONs across all subdirectories: {grand_total_nan}")
     print("\nDetailed breakdown by directory:")
 
     for dir_path in sorted(args.directories):
@@ -131,14 +161,15 @@ def main():
             print("-" * (len(dir_path) + 11))
             subdirs = [subdir for subdir in os.scandir(dir_path) if subdir.is_dir()]
             for subdir in sorted(subdirs, key=lambda x: x.name):
-                count, failed, avg_success, avg_spl, avg_soft_spl = analyze_json_files(
-                    subdir.path, cache
+                count, failed, nan_count, avg_success, avg_spl, avg_soft_spl = (
+                    analyze_json_files(subdir.path, cache)
                 )
-                if count > 0 or failed > 0:
+                if count > 0 or failed > 0 or nan_count > 0:
                     print(
-                        f"  {os.path.basename(subdir.path)}: {count} valid"
-                        f", {failed} blank (avg success: {avg_success:.2f},"
-                        f" avg SPL: {avg_spl:.2f}, avg soft SPL: {avg_soft_spl:.2f})"
+                        f"  {os.path.basename(subdir.path)}: {count} valid,"
+                        f" {failed} blank, {nan_count} NaN SPL (avg success:"
+                        f" {avg_success:.2f}, avg SPL: {avg_spl:.2f}, avg soft SPL:"
+                        f" {avg_soft_spl:.2f})"
                     )
 
 
