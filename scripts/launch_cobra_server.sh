@@ -15,8 +15,8 @@ export session_name=${COBRA_SESSION_NAME:-cobra_server_${RANDOM}}
 # Create a new detached session with explicit socket path
 echo "Creating new tmux session..."
 $tm new-session -d -s "${session_name}" 2>/dev/null || true
-cmd="source ${env_vars} && cd ${COBRA_DIR} && ${COBRA_PYTHON} cobra/models/cobra_server.py --checkpoint ${COBRA_CKPT}"
-$tm send-keys -t ${session_name} "$cmd --port ${COBRA_PORT}" C-m
+cmd="source ${env_vars} && cd ${COBRA_DIR} && while true; do ${COBRA_PYTHON} cobra/models/cobra_server.py --checkpoint ${COBRA_CKPT} --port ${COBRA_PORT}; done"
+$tm send-keys -t ${session_name} "$cmd" C-m
 
 echo "List of tmux windows:"
 $tm ls

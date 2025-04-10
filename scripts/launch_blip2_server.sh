@@ -20,7 +20,7 @@ export session_name=${BLIP2_SESSION_NAME:-blip2_server_${RANDOM}}
 # Create a new detached session with explicit socket path
 echo "Creating new tmux session..."
 $tm new-session -d -s "${session_name}" 2>/dev/null || true
-$tm send-keys -t ${session_name}:0.0 "source ${env_vars} && cd ${VLFM_DIR} && ${VLFM_PYTHON} -m vlfm.vlm.blip2itm --port ${BLIP2ITM_PORT}" C-m
+$tm send-keys -t ${session_name}:0.0 "source ${env_vars} && cd ${VLFM_DIR} && while true; do ${VLFM_PYTHON} -m vlfm.vlm.blip2itm --port ${BLIP2ITM_PORT}; done" C-m
 
 echo "List of tmux windows:"
 $tm ls

@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import os
 from collections import Counter
 from typing import Any, Dict, List
@@ -46,7 +47,9 @@ def calculate_frequencies(failure_causes: List[str]) -> None:
     for cause, count in counter.most_common():
         percentage = (count / total) * 100
         # Add each row to the table
-        table.add_row([cause.replace("did_not_fail", "succeeded!"), count, f"{percentage:.2f}%"])
+        table.add_row(
+            [cause.replace("did_not_fail", "succeeded!"), count, f"{percentage:.2f}%"]
+        )
 
     print(table)
 
@@ -54,19 +57,75 @@ def calculate_frequencies(failure_causes: List[str]) -> None:
 def calculate_avg_performance(stats: List[Dict[str, Any]]) -> None:
     """
     Calculate the average performance of the agent across all episodes.
+    Skip NaN values when calculating averages.
 
     Args:
         stats (List[Dict[str, Any]]): A list of stats for each episode.
     """
-    success, spl, soft_spl = [[episode.get(k, -1) for episode in stats] for k in ["success", "spl", "soft_spl"]]
+    success, spl, soft_spl = [
+        [episode.get(k, -1) for episode in stats]
+        for k in ["success", "spl", "soft_spl"]
+    ]
 
-    # Create a table with headers
-    table = PrettyTable(["Metric", "Average"])
+    # Count NaN values and filter them out for calculations
+    nan_counts = {
+        "success": sum(
+            1 for val in success if isinstance(val, float) and math.isnan(val)
+        ),
+        "spl": sum(1 for val in spl if isinstance(val, float) and math.isnan(val)),
+        "soft_spl": sum(
+            1 for val in soft_spl if isinstance(val, float) and math.isnan(val)
+        ),
+    }
 
-    # Add each row to the table
-    table.add_row(["Success", f"{sum(success) / len(success) * 100:.2f}%"])
-    table.add_row(["SPL", f"{sum(spl) / len(spl) * 100:.2f}%"])
-    table.add_row(["Soft SPL", f"{sum(soft_spl) / len(soft_spl) * 100:.2f}%"])
+    # Filter out NaN values
+    success_filtered = [
+        val for val in success if not (isinstance(val, float) and math.isnan(val))
+    ]
+    spl_filtered = [
+        val for val in spl if not (isinstance(val, float) and math.isnan(val))
+    ]
+    soft_spl_filtered = [
+        val for val in soft_spl if not (isinstance(val, float) and math.isnan(val))
+    ]
+
+    # Create a table with headers - now with a third column for NaN counts
+    table = PrettyTable(["Metric", "Average", "NaN Count"])
+
+    # Add each row to the table with NaN counts
+    table.add_row(
+        [
+            "Success",
+            (
+                f"{sum(success_filtered) / len(success_filtered) * 100:.2f}%"
+                if success_filtered
+                else "N/A"
+            ),
+            nan_counts["success"],
+        ]
+    )
+    table.add_row(
+        [
+            "SPL",
+            (
+                f"{sum(spl_filtered) / len(spl_filtered) * 100:.2f}%"
+                if spl_filtered
+                else "N/A"
+            ),
+            nan_counts["spl"],
+        ]
+    )
+    table.add_row(
+        [
+            "Soft SPL",
+            (
+                f"{sum(soft_spl_filtered) / len(soft_spl_filtered) * 100:.2f}%"
+                if soft_spl_filtered
+                else "N/A"
+            ),
+            nan_counts["soft_spl"],
+        ]
+    )
 
     print(table)
 
@@ -74,6 +133,7 @@ def calculate_avg_performance(stats: List[Dict[str, Any]]) -> None:
 def calculate_avg_fail_per_category(stats: List[Dict[str, Any]]) -> None:
     """
     For each possible "target_object", calculate the average failure rate.
+    Skip NaN success values.
 
     Args:
         stats (List[Dict[str, Any]]): A list of stats for each episode.
@@ -83,6 +143,10 @@ def calculate_avg_fail_per_category(stats: List[Dict[str, Any]]) -> None:
 
     for episode in stats:
         category = episode["target_object"]
+        # Skip episodes with NaN success values
+        if isinstance(episode.get("success"), float) and math.isnan(episode["success"]):
+            continue
+
         success = int(episode["success"]) == 1
 
         if category not in category_stats:
@@ -105,14 +169,19 @@ def calculate_avg_fail_per_category(stats: List[Dict[str, Any]]) -> None:
         table.add_row(
             [
                 category,
-                f"{avg_failure_rate:.2f}% ({c_stats['fail_count']}/{c_stats['total_count']})",
+                (
+                    f"{avg_failure_rate:.2f}%"
+                    f" ({c_stats['fail_count']}/{c_stats['total_count']})"
+                ),
             ]
         )
 
     print(table)
 
 
-def calculate_avg_fail_rate_per_category(stats: List[Dict[str, Any]], failure_cause: str) -> None:
+def calculate_avg_fail_rate_per_category(
+    stats: List[Dict[str, Any]], failure_cause: str
+) -> None:
     """
     For each possible "target_object", count the number of times the agent failed due to
     the given failure cause. Then, sum the counts across all categories and use it to
@@ -137,7 +206,9 @@ def calculate_avg_fail_rate_per_category(stats: List[Dict[str, Any]], failure_ca
     table = PrettyTable(["Category", f"% Occurrence for {failure_cause}"])
 
     # Sort the categories by their failure count in descending order
-    sorted_categories = sorted(category_to_fail_count.items(), key=lambda x: x[1], reverse=True)
+    sorted_categories = sorted(
+        category_to_fail_count.items(), key=lambda x: x[1], reverse=True
+    )
 
     # Add each row to the table
     for category, count in sorted_categories:
