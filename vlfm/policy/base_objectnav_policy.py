@@ -34,6 +34,9 @@ except Exception:
         pass
 
 
+HM3D_ID_TO_NAME = ["chair", "bed", "potted plant", "toilet", "tv", "couch"]
+
+
 class BaseObjectNavPolicy(BasePolicy):
     _target_object: str = ""
     _policy_info: Dict[str, Any] = {}
@@ -61,6 +64,8 @@ class BaseObjectNavPolicy(BasePolicy):
         vqa_prompt: str = "Is this ",
         coco_threshold: float = 0.8,
         non_coco_threshold: float = 0.4,
+        det_thresholds: str = "",
+        use_coco_detector: bool = True,
         use_ov_detector: bool = True,
         *args: Any,
         **kwargs: Any,
@@ -73,10 +78,13 @@ class BaseObjectNavPolicy(BasePolicy):
             wait_for_server(self._object_detector.url + "/health", timeout=500)
         else:
             self._object_detector: Optional[OWLv2Client] = None
-        self._coco_object_detector: YOLOClient = YOLOClient(
-            port=int(os.environ.get("YOLO_PORT", "12184"))
-        )
-        wait_for_server(self._coco_object_detector.url + "/health", timeout=500)
+        if use_coco_detector:
+            self._coco_object_detector: Optional[YOLOClient] = YOLOClient(
+                port=int(os.environ.get("YOLO_PORT", "12184"))
+            )
+            wait_for_server(self._coco_object_detector.url + "/health", timeout=500)
+        else:
+            self._coco_object_detector: Optional[YOLOClient] = None
         self._mobile_sam: MobileSAMClient = MobileSAMClient(
             port=int(os.environ.get("SAM_PORT", "12183"))
         )
@@ -98,6 +106,13 @@ class BaseObjectNavPolicy(BasePolicy):
         self._vqa_prompt: str = vqa_prompt
         self._coco_threshold: float = coco_threshold
         self._non_coco_threshold: float = non_coco_threshold
+        if det_thresholds == "":
+            self._det_thresholds: Dict[str, float] = {}
+        else:
+            self._det_thresholds: Dict[str, float] = {
+                k: v
+                for k, v in zip(HM3D_ID_TO_NAME, map(float, det_thresholds.split(",")))
+            }
 
         self._num_steps: int = 0
         self._did_reset: bool = False
@@ -257,31 +272,35 @@ class BaseObjectNavPolicy(BasePolicy):
 
     def _get_object_detections(self, img: np.ndarray) -> ObjectDetections:
         target_classes = self._target_object.split("|")
-        has_coco = any(c in COCO_CLASSES for c in target_classes) and self._load_yolo
-
-        detections = (
-            self._coco_object_detector.predict(img)
-            if has_coco
-            else self._object_detector.predict(img, classes=target_classes)
+        assert (
+            self._coco_object_detector is not None or self._object_detector is not None
+        ), (
+            "No object detector found. Set use_coco_detector or use_ov_detector to "
+            "True in the config."
         )
-        detections.filter_by_class(target_classes)
-        det_conf_threshold = (
-            self._coco_threshold if has_coco else self._non_coco_threshold
-        )
-        detections.filter_by_conf(det_conf_threshold)
 
-        if (
-            self._object_detector is not None
-            and has_coco
-            and detections.num_detections == 0
+        if self._coco_object_detector is not None and any(
+            c in COCO_CLASSES for c in target_classes
         ):
-            # Retry with non-coco object detector
+            detections = self._coco_object_detector.predict(img)
+            detections.filter_by_class(target_classes)
+            detections.filter_by_conf(self._coco_threshold)
+            if detections.num_detections > 0 or self._object_detector is None:
+                return detections
+
+        if self._object_detector is not None:
+            if target_classes[0] in self._det_thresholds:
+                conf_thresh = self._det_thresholds[target_classes[0]]
+            else:
+                conf_thresh = self._non_coco_threshold
+
             target_classes = self.coco2ov(target_classes)
             detections = self._object_detector.predict(img, classes=target_classes)
             detections.filter_by_class(target_classes)
-            detections.filter_by_conf(self._non_coco_threshold)
+            detections.filter_by_conf(conf_thresh)
+            return detections
 
-        return detections
+        raise RuntimeError("This should never happen!")
 
     def _pointnav(self, goal: np.ndarray, stop: bool = False) -> Tensor:
         """
@@ -445,7 +464,9 @@ class VLFMConfig:
     vqa_prompt: str = "Is this "
     coco_threshold: float = 0.8
     non_coco_threshold: float = 0.4
+    det_thresholds: str = ""
     agent_radius: float = 0.18
+    use_coco_detector: bool = True
     use_ov_detector: bool = True
 
     @classmethod  # type: ignore

@@ -257,8 +257,8 @@ class HabitatMixin:
             if c == "potted plant":
                 result.append("plant")
             elif self._dataset_type == "hm3d" and c == "tv":
-                result.append("television")
-                result.append("computer monitor")
+                result.append("tv")
+                result.append("monitor")
             else:
                 result.append(c)
         return result

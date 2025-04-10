@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from .server_wrapper import ServerMixin, host_model, send_request, str_to_image
+from .server_wrapper import ServerMixin, host_model, send_request, str_to_image, CUDALockMixin
 
 try:
     from lavis.models import load_model_and_preprocess
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
     print("Loading model...")
 
-    class BLIP2Server(ServerMixin, BLIP2):
+    class BLIP2Server(CUDALockMixin, ServerMixin, BLIP2):
         def process_payload(self, payload: dict) -> dict:
             image = str_to_image(payload["image"])
             return {"response": self.ask(image, payload.get("prompt"))}

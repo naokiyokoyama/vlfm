@@ -7,10 +7,12 @@ import pickle
 from pathlib import Path
 from typing import Dict, Tuple
 
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 class DirectoryCache:
     def __init__(self, cache_file: str = ".analysis_cache"):
-        self.cache_file = cache_file
+        self.cache_file = os.path.join(THIS_DIR, cache_file)
         self.cache: Dict[str, Tuple[Dict[str, float], Dict[str, float]]] = {}
         self.load_cache()
 
@@ -144,7 +146,7 @@ def main():
             subdirs = [subdir for subdir in os.scandir(dir_path) if subdir.is_dir()]
             for subdir in sorted(subdirs, key=lambda x: x.name):
                 count, failed, nan_count, avg_success, avg_spl, avg_soft_spl = (
-                    analyze_json_files(subdir.path, cache)
+                    analyze_json_files(os.path.abspath(subdir.path), cache)
                 )
                 grand_total_valid += count
                 grand_total_failed += failed
@@ -166,10 +168,10 @@ def main():
                 )
                 if count > 0 or failed > 0 or nan_count > 0:
                     print(
-                        f"  {os.path.basename(subdir.path)}: {count} valid,"
-                        f" {failed} blank, {nan_count} NaN SPL (avg success:"
-                        f" {avg_success:.2f}, avg SPL: {avg_spl:.2f}, avg soft SPL:"
-                        f" {avg_soft_spl:.2f})"
+                        f"  {os.path.basename(os.path.abspath(subdir.path))}:"
+                        f" {count} valid, {failed} blank, {nan_count} NaN SPL (avg"
+                        f" success: {avg_success:.2f}, avg SPL: {avg_spl:.2f}, avg soft"
+                        f" SPL: {avg_soft_spl:.2f})"
                     )
 
 
