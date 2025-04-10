@@ -62,13 +62,6 @@ class ObjectPointCloudMap:
         global_cloud = transform_points(tf_camera_to_episodic, local_cloud)
         global_cloud = np.concatenate((global_cloud, within_range[:, None]), axis=1)
 
-        curr_position = tf_camera_to_episodic[:3, 3]
-        closest_point = self._get_closest_point(global_cloud, curr_position)
-        dist = np.linalg.norm(closest_point[:3] - curr_position)
-        if dist < 1.0:
-            # Object is too close to trust as a valid object
-            return
-
         if object_name in self.clouds:
             self.clouds[object_name] = np.concatenate((self.clouds[object_name], global_cloud), axis=0)
         else:
@@ -138,6 +131,11 @@ class ObjectPointCloudMap:
         if within_range_exists:
             # Filter out all points that are not within range
             target_cloud = target_cloud[target_cloud[:, -1] == 1]
+            target_sub_cloud = sparsify_vectorized(target_cloud[:, :3], 0.025)
+            target_sub_cloud = get_random_subarray(target_sub_cloud, 5000)
+            valid_indices = open3d_dbscan_filtering(target_sub_cloud, min_points=5)
+            if len(valid_indices) != 0:
+                return target_sub_cloud[valid_indices]
         return target_cloud
 
     def _extract_object_cloud(
@@ -157,8 +155,6 @@ class ObjectPointCloudMap:
         valid_depth = valid_depth * (max_depth - min_depth) + min_depth
         cloud = get_point_cloud(valid_depth, final_mask, fx, fy)
         cloud = get_random_subarray(cloud, 5000)
-        if self.use_dbscan:
-            cloud = open3d_dbscan_filtering(cloud)
 
         return cloud
 
@@ -205,7 +201,8 @@ def open3d_dbscan_filtering(points: np.ndarray, eps: float = 0.2, min_points: in
     non_noise_label_counts = label_counts[non_noise_labels_mask]
 
     if len(non_noise_labels) == 0:  # only noise was detected
-        return np.array([])
+        # Return an empty array with an integer dtype suitable for indexing
+        return np.array([], dtype=np.int64)
 
     # Find the label of the largest non-noise cluster
     largest_cluster_label = non_noise_labels[np.argmax(non_noise_label_counts)]
@@ -213,10 +210,7 @@ def open3d_dbscan_filtering(points: np.ndarray, eps: float = 0.2, min_points: in
     # Get the indices of points in the largest non-noise cluster
     largest_cluster_indices = np.where(labels == largest_cluster_label)[0]
 
-    # Get the points in the largest non-noise cluster
-    largest_cluster_points = points[largest_cluster_indices]
-
-    return largest_cluster_points
+    return largest_cluster_indices
 
 
 def visualize_and_save_point_cloud(point_cloud: np.ndarray, save_path: str) -> None:
@@ -295,3 +289,46 @@ def too_offset(mask: np.ndarray) -> bool:
         return x + w >= int(0.95 * mask.shape[1])
     else:
         return False
+
+
+def sparsify_vectorized(points: np.ndarray, voxel_size: float) -> np.ndarray:
+    """
+    Sparsifies a point cloud using vectorized voxel quantization.
+
+    Keeps only one point per voxel, defined by the voxel_size.
+    This implementation uses numpy vectorization for efficiency, avoiding
+    explicit Python loops. The point kept is the first one encountered
+    that falls into that voxel based on its original index.
+
+    Args:
+        points: A NumPy array of shape (N, 3) representing the 3D point cloud.
+        voxel_size: The size of the voxel grid cells. Points falling into the
+                    same grid cell are considered for removal. Must be positive.
+
+    Returns:
+        A NumPy array of shape (M, 3), where M <= N, representing the
+        sparsified point cloud. Returns an empty array of shape (0, 3)
+        if the input is empty.
+    """
+    # --- Input Validation ---
+    if not isinstance(points, np.ndarray):
+        raise TypeError("Input 'points' must be a NumPy array.")
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError(f"Input 'points' must have shape (N, 3), but got {points.shape}")
+    if not isinstance(voxel_size, (float, int)) or voxel_size <= 0:
+        raise ValueError("'voxel_size' must be a positive number.")
+
+    n_points = points.shape[0]
+    if n_points == 0:
+        return np.empty((0, 3), dtype=points.dtype)
+
+    # Calculate discrete voxel indices for each point
+    voxel_indices = np.floor(points / voxel_size).astype(np.int64) # Use int64 for safety with large coordinates
+
+    # np.unique with axis=0 treats each row as an element.
+    # return_index=True gives the index of the *first* occurrence of each unique row.
+    unique_voxel_indices, first_indices = np.unique(voxel_indices, axis=0, return_index=True)
+
+    sparse_points = points[first_indices]
+
+    return sparse_points
