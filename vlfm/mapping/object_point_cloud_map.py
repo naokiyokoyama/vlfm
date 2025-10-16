@@ -63,9 +63,11 @@ class ObjectPointCloudMap:
         global_cloud = np.concatenate((global_cloud, within_range[:, None]), axis=1)
 
         if object_name in self.clouds:
-            self.clouds[object_name] = np.concatenate((self.clouds[object_name], global_cloud), axis=0)
-        else:
-            self.clouds[object_name] = global_cloud
+            global_cloud = np.concatenate((self.clouds[object_name], global_cloud), axis=0)
+
+        global_cloud = global_cloud[sparsify_vectorized(global_cloud[:, :3], 0.025)]
+
+        self.clouds[object_name] = global_cloud
 
     def get_best_object(self, target_class: str, curr_position: np.ndarray) -> np.ndarray:
         target_cloud = self.get_target_cloud(target_class)
@@ -126,16 +128,10 @@ class ObjectPointCloudMap:
 
     def get_target_cloud(self, target_class: str) -> np.ndarray:
         target_cloud = self.clouds[target_class].copy()
-        # Determine whether any points are within range
-        within_range_exists = np.any(target_cloud[:, -1] == 1)
-        if within_range_exists:
-            # Filter out all points that are not within range
-            target_cloud = target_cloud[target_cloud[:, -1] == 1]
-            target_sub_cloud = sparsify_vectorized(target_cloud[:, :3], 0.025)
-            target_sub_cloud = get_random_subarray(target_sub_cloud, 5000)
-            valid_indices = open3d_dbscan_filtering(target_sub_cloud, min_points=5)
-            if len(valid_indices) != 0:
-                return target_sub_cloud[valid_indices]
+        target_sub_cloud = get_random_subarray(target_cloud, 5000)[:, :3]
+        valid_indices = open3d_dbscan_filtering(target_sub_cloud, min_points=5)
+        if len(valid_indices) != 0:
+            return target_sub_cloud[valid_indices]
         return target_cloud
 
     def _extract_object_cloud(
@@ -185,7 +181,7 @@ class ObjectPointCloudMap:
         return closest_point
 
 
-def open3d_dbscan_filtering(points: np.ndarray, eps: float = 0.2, min_points: int = 100) -> np.ndarray:
+def open3d_dbscan_filtering(points: np.ndarray, eps: float = 0.075, min_points: int = 100) -> np.ndarray:
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points)
 
@@ -329,6 +325,4 @@ def sparsify_vectorized(points: np.ndarray, voxel_size: float) -> np.ndarray:
     # return_index=True gives the index of the *first* occurrence of each unique row.
     unique_voxel_indices, first_indices = np.unique(voxel_indices, axis=0, return_index=True)
 
-    sparse_points = points[first_indices]
-
-    return sparse_points
+    return first_indices
