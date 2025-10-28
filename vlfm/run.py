@@ -10,7 +10,11 @@ import os
 # used to suppress the unused import and unsorted import warnings by ruff.
 import frontier_exploration  # noqa
 import hydra  # noqa
-import ovon  # noqa: F401
+
+try:
+    import ovon  # noqa: F401
+except ImportError:
+    print("Failed to import ovon! This is fine if you aren't using the OVON benchmark.")
 from habitat import get_config  # noqa
 from habitat.config.default import patch_config
 from habitat.config.default_structured_configs import register_hydra_plugin
